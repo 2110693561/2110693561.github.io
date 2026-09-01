@@ -32,7 +32,7 @@ const isActive = (href: string) => (href.replace(/\/$/, "") || "/") === currentP
     <meta name="author" content={SITE.author} />
     <meta name="generator" content={Astro.generator} />
     <link rel="canonical" href={canonical} />
-    <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+    <link rel="icon" type="image/svg+xml" href={SITE.favicon.startsWith("http") ? SITE.favicon : `${base}${SITE.favicon.replace(/^\//, "")}`} />
     <link rel="alternate" type="application/rss+xml" title={SITE.name} href={`${base}rss.xml`} />
     <link rel="sitemap" href={`${base}sitemap-index.xml`} />
     <meta property="og:site_name" content={SITE.name} />
@@ -54,7 +54,17 @@ const isActive = (href: string) => (href.replace(/\/$/, "") || "/") === currentP
   <body>
     <header class="site-header">
       <div class="wrap nav">
-        <a class="brand" href={base}>{SITE.name}</a>
+        <a class="brand" href={base}>
+          {
+            SITE.logo &&
+              (/^https?:\/\/|^\/.+/i.test(SITE.logo) ? (
+                <img class="brand-logo" src={SITE.logo} alt="" />
+              ) : (
+                <span class="brand-mark">{SITE.logo}</span>
+              ))
+          }
+          {SITE.name}
+        </a>
         {
           navItems.map((n) => (
             <a class:list={["navlink", { active: isActive(n.href) }]} href={n.href}>

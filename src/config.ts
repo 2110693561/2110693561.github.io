@@ -15,6 +15,10 @@ export const SITE = {
   title: siteData.title,
   // 站点描述（首页 hero、SEO）
   description: siteData.description,
+  // 左上角 logo：填图片链接（https://... 或 /images/xx.png）或 emoji/短文字；留空则只显示站点名
+  logo: siteData.logo || "",
+  // 浏览器标签页图标：填图片链接；默认使用 /favicon.svg
+  favicon: siteData.favicon || "/favicon.svg",
   // GitHub Pages 地址（username.github.io 仓库）
   website: "https://2110693561.github.io",
   // 仓库名为 yourname.github.io 时用 "/"；

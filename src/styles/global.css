@@ -69,6 +69,16 @@ h1, h2, h3, h4 { line-height: 1.3; }
   gap: 8px;
 }
 .brand:hover { color: var(--text); }
+.brand-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.brand-mark {
+  font-size: 18px;
+  line-height: 1;
+}
 .navlink {
   padding: 6px 12px;
   border-radius: 10px;

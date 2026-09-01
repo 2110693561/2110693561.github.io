@@ -37,6 +37,16 @@ collections:
           - { name: author, label: 作者名（首页问候语、页脚版权）, widget: string }
           - { name: title, label: 浏览器标签页标题, widget: string }
           - { name: description, label: 站点描述（首页副标题、搜索引擎展示）, widget: text }
+          - name: logo
+            label: 左上角 Logo（可选）
+            widget: string
+            required: false
+            hint: 填图片链接（https://... 或 /images/xx.png，可先在媒体库上传）或一个 emoji（如 📝）；留空则只显示站点名
+          - name: favicon
+            label: 标签页图标（可选）
+            widget: string
+            required: false
+            hint: 默认 /favicon.svg；可填图片链接更换
           - { name: github, label: GitHub 主页链接, widget: string, required: false }
 
   # ---------- 文章 ----------
