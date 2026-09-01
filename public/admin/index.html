@@ -300,6 +300,21 @@
         color: var(--muted) !important;
         white-space: nowrap;
       }
+      /* ---------- 批量上传按钮 ---------- */
+      #qa-bulk-upload {
+        background: #2e3348;
+        color: #fff !important;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 18px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        margin-right: 8px;
+      }
+      #qa-bulk-upload:hover {
+        background: #3d4360;
+      }
       #nc-root .qa-toast {
         position: fixed;
         left: 50%;
@@ -967,21 +982,152 @@
           });
         }
 
+        // ---------- 资料批量上传：原生多选（Ctrl/Shift），直传 public/files/，不经过媒体库 ----------
+        function todayStr() {
+          var d = new Date();
+          function p(n) {
+            return (n < 10 ? "0" : "") + n;
+          }
+          return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+        }
+        function b64OfBlob(blob) {
+          return new Promise(function (res, rej) {
+            var r = new FileReader();
+            r.onload = function () {
+              res(String(r.result).split(",")[1]);
+            };
+            r.onerror = rej;
+            r.readAsDataURL(blob);
+          });
+        }
+        function safeName(s) {
+          return s.replace(/[\\/#?%&"'<>|:*\s]+/g, "_").replace(/^_+|_+$/g, "") || "file";
+        }
+        async function ghPutFile(t, path, b64Content, message) {
+          var res = await fetch(
+            GH + "/repos/" + REPO + "/contents/" + path.split("/").map(encodeURIComponent).join("/"),
+            {
+              method: "PUT",
+              headers: gh(t),
+              body: JSON.stringify({ message: message, content: b64Content, branch: BRANCH }),
+            }
+          );
+          if (!res.ok) throw await ghError(res);
+        }
+        async function bulkUpload(fileList) {
+          var t = token();
+          if (!t) {
+            alert("批量上传需要登录令牌，请退出后台重新登录");
+            return;
+          }
+          var arr = Array.prototype.slice.call(fileList);
+          if (!arr.length) return;
+          var name = prompt("给这批资料起个名称：", "资料 " + todayStr());
+          if (!name) return;
+          try {
+            var urls = [];
+            for (var i = 0; i < arr.length; i++) {
+              var f = arr[i];
+              toast("上传中 " + (i + 1) + "/" + arr.length + "：" + f.name);
+              var fname = Date.now().toString(36) + "-" + safeName(f.name);
+              var path = "public/files/" + fname;
+              await ghPutFile(t, path, await b64OfBlob(f), "上传资料：" + f.name);
+              urls.push("/files/" + fname);
+            }
+            var base = safeName(name);
+            var slug = base;
+            var fm =
+              "---\n" +
+              'title: "' +
+              name.replace(/"/g, '\\"') +
+              '"\n' +
+              "date: " +
+              todayStr() +
+              "\n" +
+              "attachments:\n" +
+              urls
+                .map(function (u) {
+                  return "  - file: " + u + "\n";
+                })
+                .join("");
+            fm = fm.replace(/\n$/, "\n") + "---\n";
+            toast("创建资料条目…");
+            try {
+              await ghPutFile(t, "src/files/" + slug + ".md", b64(fm), "新增资料：" + name);
+            } catch (err) {
+              if (/422|already exists/i.test(err && err.message)) {
+                slug = base + "-" + Date.now().toString(36);
+                await ghPutFile(t, "src/files/" + slug + ".md", b64(fm), "新增资料：" + name);
+              } else {
+                throw err;
+              }
+            }
+            toast("已上传 " + urls.length + " 个文件，构建后生效");
+            setTimeout(function () {
+              location.reload();
+            }, 1500);
+          } catch (err) {
+            alert("上传失败：" + ((err && err.message) || err));
+          }
+        }
+        var bulkInput = document.createElement("input");
+        bulkInput.type = "file";
+        bulkInput.multiple = true;
+        bulkInput.style.display = "none";
+        bulkInput.addEventListener("change", function () {
+          var fl = bulkInput.files;
+          bulkInput.value = "";
+          bulkUpload(fl);
+        });
+        function injectUpload() {
+          if (collection() !== "files") {
+            var old = document.getElementById("qa-bulk-upload");
+            if (old) old.remove();
+            return;
+          }
+          if (document.getElementById("qa-bulk-upload")) return;
+          var anchor = null;
+          var cands = document.querySelectorAll("#nc-root button, #nc-root a");
+          for (var i = 0; i < cands.length; i++) {
+            var txt = (cands[i].textContent || "").trim();
+            if (/^\+\s*资料$/.test(txt)) {
+              anchor = cands[i];
+              break;
+            }
+          }
+          if (!anchor) return;
+          var btn = document.createElement("button");
+          btn.id = "qa-bulk-upload";
+          btn.type = "button";
+          btn.textContent = "批量上传";
+          btn.title = "一次选择多个文件（可按住 Ctrl / Shift 多选），自动合并为一条资料";
+          btn.addEventListener("click", function () {
+            bulkInput.click();
+          });
+          if (anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor);
+        }
+
         var pending = null;
         var mo = new MutationObserver(function () {
           if (pending) return;
           pending = setTimeout(function () {
             pending = null;
             ensure();
+            injectUpload();
           }, 300);
         });
         function start() {
           if (document.body) {
+            document.body.appendChild(bulkInput);
             mo.observe(document.body, { childList: true, subtree: true });
             window.addEventListener("hashchange", function () {
-              setTimeout(ensure, 400);
+              setTimeout(function () {
+                ensure();
+                injectUpload();
+              }, 400);
             });
             ensure();
+            injectUpload();
           } else {
             setTimeout(start, 60);
           }
