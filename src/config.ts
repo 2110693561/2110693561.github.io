@@ -62,11 +62,11 @@ export const ANALYTICS = {
 //    把页面底部生成的 repo / repoId / category / categoryId 填到下面
 // 4. enabled 改为 true
 export const GISCUS = {
-  enabled: false,
-  repo: "", // 例如 yourname/mynote
-  repoId: "",
+  enabled: true,
+  repo: "2110693561/2110693561.github.io",
+  repoId: "R_kgDOI_E-EA",
   category: "Announcements",
-  categoryId: "",
+  categoryId: "DIC_kwDOI_E-EM4DEqxT",
   // pathname：按路径把评论关联到每篇文章
   mapping: "pathname",
   reactionsEnabled: true,
