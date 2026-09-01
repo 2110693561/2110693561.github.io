@@ -17,9 +17,9 @@
         --border: #e5e8ef;
         --text: #1a1f36;
         --muted: #697089;
-        --accent: #4f46e5;
-        --accent-hover: #4338ca;
-        --accent-soft: #eef2ff;
+        --accent: #1f2937;
+        --accent-hover: #0f172a;
+        --accent-soft: #eef0f4;
         --danger: #dc2626;
         --radius: 12px;
         --radius-sm: 8px;
@@ -69,19 +69,17 @@
         font-weight: 600;
       }
 
-      /* ---------- 列表卡片 ---------- */
+      /* ---------- 列表条目：不加边框，避免文字外出现框 ---------- */
       #nc-root [class*="card" i] {
         border-radius: var(--radius);
-        border: 1px solid var(--border);
+        border: none;
         background: var(--panel);
-        box-shadow: var(--shadow-sm);
-        transition: box-shadow 0.16s ease, transform 0.16s ease,
-          border-color 0.16s ease;
+        box-shadow: none;
+        transition: box-shadow 0.16s ease;
       }
       #nc-root [class*="card" i]:hover {
-        border-color: #c9cdf7;
-        box-shadow: var(--shadow-md);
-        transform: translateY(-1px);
+        box-shadow: var(--shadow-sm);
+        transform: none;
       }
 
       /* ---------- 按钮 ---------- */
@@ -113,7 +111,7 @@
       #nc-root select:focus {
         outline: none;
         border-color: var(--accent);
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.13);
+        box-shadow: 0 0 0 3px rgba(31, 41, 55, 0.13);
       }
 
       /* ---------- 筛选 / 分组胶囊 ---------- */
@@ -209,11 +207,11 @@
           return document.querySelector('#nc-root [class*="sidebar" i]');
         }
 
-        // 侧边栏顶部「集合 / Collections」小标题是多余的，直接隐藏
+        // 隐藏「集合 / Collections」小标题：在后台任意位置查找，避免依赖特定容器
         function hideHeading() {
-          var sb = sidebar();
-          if (!sb) return;
-          Array.prototype.forEach.call(sb.querySelectorAll("*"), function (el) {
+          var root = document.getElementById("nc-root");
+          if (!root) return;
+          Array.prototype.forEach.call(root.querySelectorAll("*"), function (el) {
             if (el.children.length) return;
             var t = (el.textContent || "").trim();
             if (t === "集合" || /^collections$/i.test(t)) el.style.display = "none";
