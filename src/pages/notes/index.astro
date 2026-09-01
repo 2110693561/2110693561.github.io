@@ -1,0 +1,53 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import NoteCard from "../../components/NoteCard.astro";
+import { getCollection, render } from "astro:content";
+import { experimental_AstroContainer as AstroContainer } from "astro/container";
+import { encryptForBrowser } from "../../utils/encrypt";
+
+const base = import.meta.env.BASE_URL;
+
+// 随手记：日期倒序；有密码的渲染后加密
+const notes = (await getCollection("notes")).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf()
+);
+
+const container = await AstroContainer.create();
+const prepared = await Promise.all(
+  notes.map(async (n) => {
+    const { Content } = await render(n);
+    const html = await container.renderToString(Content);
+    return {
+      n,
+      html,
+      payload: n.data.password ? encryptForBrowser(html, n.data.password) : undefined,
+    };
+  })
+);
+---
+
+<BaseLayout title="随手记" description="日常学习中的碎片化笔记，想到什么记什么。">
+  <div class="page-head with-actions">
+    <div>
+      <h1>随手记</h1>
+      <p>共 {notes.length} 条 · 日常碎片笔记，低门槛记录</p>
+    </div>
+    <a class="btn primary" href={`${base}admin/#/collections/notes/new`} target="_blank">写随手记</a>
+  </div>
+
+  {
+    prepared.length === 0 && (
+      <p class="search-hint">
+        还没有随手记。点右上角「写随手记」，或在 src/content/notes/ 下新建 md 文件。
+      </p>
+    )
+  }
+
+  <div class="timeline">
+    {
+      prepared.map(({ n, html, payload }) => (
+        <NoteCard note={n} html={html} payload={payload} />
+      ))
+    }
+  </div>
+</BaseLayout>

@@ -1,0 +1,31 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import PostCard from "../../components/PostCard.astro";
+import { getSortedPosts } from "../../utils/posts";
+
+export async function getStaticPaths() {
+  const posts = await getSortedPosts();
+  const tags = new Set(posts.flatMap((p) => p.data.tags));
+  return [...tags].map((tag) => ({
+    // 注意：params 使用原始值，Astro 会自动处理 URL 编码
+    params: { tag },
+    props: {
+      tag,
+      posts: posts.filter((p) => p.data.tags.includes(tag)),
+    },
+  }));
+}
+
+const { tag, posts } = Astro.props;
+const base = import.meta.env.BASE_URL;
+---
+
+<BaseLayout title={`标签：${tag}`} description={`标签「${tag}」下的全部文章。`}>
+  <div class="page-head">
+    <h1># {tag}</h1>
+    <p>{posts.length} 篇文章 · <a href={`${base}tags/`}>查看全部标签</a></p>
+  </div>
+  <div class="grid">
+    {posts.map((p) => <PostCard post={p} />)}
+  </div>
+</BaseLayout>

@@ -1,0 +1,20 @@
+{
+  "projects": [
+    {
+      "name": "GD32 外设笔记",
+      "description": "GD32 单片机 GPIO / 定时器 / USART / DMA 等外设的学习笔记与驱动模板。",
+      "tags": ["GD32", "嵌入式"]
+    },
+    {
+      "name": "OLED1306 显示模块",
+      "description": "0.96 寸 OLED 屏幕驱动：I2C 通信、字库取模、UI 界面绘制。",
+      "tags": ["OLED", "SPI/I2C"]
+    },
+    {
+      "name": "本博客",
+      "description": "Astro 构建的静态博客，部署在 GitHub Pages，写作内容用 Markdown 管理。",
+      "url": "/",
+      "tags": ["Astro", "GitHub Pages"]
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="搜索" description="全文搜索博客文章。">
+  <div class="page-head">
+    <h1>搜索</h1>
+    <p>输入关键词，搜索文章标题、描述、分类和标签</p>
+  </div>
+
+  <input
+    id="search-input"
+    class="search-box"
+    type="search"
+    placeholder="输入关键词，如：GD32、FreeRTOS、Git ..."
+    autocomplete="off"
+    autofocus
+  />
+  <div id="search-results"></div>
+</BaseLayout>
+
+<script>
+  import Fuse from "fuse.js";
+
+  interface IndexItem {
+    title: string;
+    description: string;
+    category: string;
+    tags: string[];
+    date: string;
+    url: string;
+  }
+
+  const input = document.getElementById("search-input") as HTMLInputElement;
+  const resultsBox = document.getElementById("search-results") as HTMLDivElement;
+
+  const escapeHtml = (s: string) =>
+    s.replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string
+    );
+
+  const data: IndexItem[] = await fetch(
+    `${import.meta.env.BASE_URL}search-index.json`
+  ).then((r) => r.json());
+
+  const fuse = new Fuse(data, {
+    keys: [
+      { name: "title", weight: 2 },
+      { name: "description", weight: 1 },
+      { name: "category", weight: 0.5 },
+      { name: "tags", weight: 0.5 },
+    ],
+    threshold: 0.35,
+    ignoreLocation: true,
+  });
+
+  function renderResults(q: string) {
+    const query = q.trim();
+    if (!query) {
+      resultsBox.innerHTML = "";
+      return;
+    }
+    const results = fuse.search(query).slice(0, 20);
+    if (results.length === 0) {
+      resultsBox.innerHTML = `<p class="search-hint">没有找到与「${escapeHtml(query)}」相关的文章。</p>`;
+      return;
+    }
+    resultsBox.innerHTML = results
+      .map(({ item }) => {
+        const desc = item.description ? `<p class="desc">${escapeHtml(item.description)}</p>` : "";
+        return `
+          <a class="search-result" href="${item.url}">
+            <h3>${escapeHtml(item.title)}</h3>
+            <div class="meta">${item.date} · ${escapeHtml(item.category)}</div>
+            ${desc}
+          </a>`;
+      })
+      .join("");
+  }
+
+  input.addEventListener("input", () => renderResults(input.value));
+
+  // 支持 /search/?q=xxx 直达
+  const q = new URLSearchParams(location.search).get("q");
+  if (q) {
+    input.value = q;
+    renderResults(q);
+  }
+</script>

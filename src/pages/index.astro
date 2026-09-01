@@ -1,0 +1,72 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import PostCard from "../components/PostCard.astro";
+import NoteCard from "../components/NoteCard.astro";
+import { getCollection, render } from "astro:content";
+import { experimental_AstroContainer as AstroContainer } from "astro/container";
+import { encryptForBrowser } from "../utils/encrypt";
+import { getSortedPosts } from "../utils/posts";
+import { SITE } from "../config";
+
+const posts = (await getSortedPosts()).slice(0, 6);
+
+// 随手记：取最新 4 条，有密码的加密
+const notes = (await getCollection("notes"))
+  .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf())
+  .slice(0, 4);
+
+const container = await AstroContainer.create();
+const preparedNotes = await Promise.all(
+  notes.map(async (n) => {
+    const { Content } = await render(n);
+    const html = await container.renderToString(Content);
+    return {
+      n,
+      html,
+      payload: n.data.password ? encryptForBrowser(html, n.data.password) : undefined,
+    };
+  })
+);
+
+const base = import.meta.env.BASE_URL;
+---
+
+<BaseLayout>
+  <section class="hero">
+    <h1>你好，我是 {SITE.author}</h1>
+    <p class="sub">{SITE.description}</p>
+    <div class="btns">
+      <a class="btn primary" href={`${base}posts/`}>开始阅读</a>
+      <a class="btn" href={`${base}admin/#/collections/notes/new`} target="_blank">去写随手记</a>
+    </div>
+  </section>
+
+  <div class="section-head">
+    <h2>最新文章</h2>
+    <a class="more" href={`${base}posts/`}>全部文章 →</a>
+  </div>
+  <div class="grid">
+    {posts.map((p) => <PostCard post={p} />)}
+  </div>
+
+  {
+    preparedNotes.length > 0 && (
+      <>
+        <div class="section-head">
+          <h2>随手记</h2>
+          <span class="more-links">
+            <a class="more" href={`${base}admin/#/collections/notes/new`} target="_blank">
+              写随手记
+            </a>
+            <a class="more" href={`${base}notes/`}>全部随手记 →</a>
+          </span>
+        </div>
+        <div class="timeline">
+          {preparedNotes.map(({ n, html, payload }) => (
+            <NoteCard note={n} html={html} payload={payload} />
+          ))}
+        </div>
+      </>
+    )
+  }
+</BaseLayout>

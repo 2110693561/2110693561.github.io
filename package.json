@@ -1,0 +1,21 @@
+{
+  "name": "mynote-blog",
+  "version": "2.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "cms": "decap-server"
+  },
+  "dependencies": {
+    "@astrojs/rss": "^4.0.19",
+    "@astrojs/sitemap": "^3.7.4",
+    "astro": "^7.2.9",
+    "fuse.js": "^7.5.0"
+  },
+  "devDependencies": {
+    "decap-server": "^3.11.0"
+  }
+}

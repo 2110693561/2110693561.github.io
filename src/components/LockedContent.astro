@@ -1,0 +1,169 @@
+---
+/**
+ * 密码锁组件：构建时内容已加密，访客输入正确密码后浏览器解密显示。
+ * 用法：{payload && <LockedContent payload={payload} hint="提示语（可选）" />}
+ */
+import type { EncryptedPayload } from "../utils/encrypt";
+
+interface Props {
+  payload: EncryptedPayload;
+  /** 可选的密码提示 */
+  hint?: string;
+}
+
+const { payload, hint } = Astro.props;
+const iterations = 120000;
+---
+
+<div
+  class="locked-content"
+  data-salt={payload.salt}
+  data-iv={payload.iv}
+  data-data={payload.data}
+  data-iterations={iterations}
+>
+  <div class="lock-ui">
+    <div class="lock-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2"></rect>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>
+    </div>
+    <p class="lock-title">此内容已加密，请输入密码查看</p>
+    {
+      hint && (
+        <p class="lock-hint">
+          提示：
+          {hint}
+        </p>
+      )
+    }
+    <div class="lock-row">
+      <input class="lock-input" type="password" placeholder="输入密码" autocomplete="off" />
+      <button class="lock-btn" type="button">解锁</button>
+    </div>
+    <p class="lock-error" hidden>密码错误，请重试。</p>
+  </div>
+  <div class="lock-target" hidden></div>
+</div>
+
+<style>
+  .locked-content {
+    margin: 1rem 0;
+  }
+  .lock-ui {
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    padding: 28px 22px;
+    text-align: center;
+  }
+  .lock-icon {
+    color: var(--accent);
+    display: flex;
+    justify-content: center;
+    margin-bottom: 8px;
+  }
+  .lock-title {
+    margin: 0 0 4px;
+    font-weight: 600;
+  }
+  .lock-hint {
+    color: var(--muted);
+    font-size: 13.5px;
+    margin: 0 0 4px;
+  }
+  .lock-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .lock-input {
+    padding: 9px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    outline: none;
+    width: 220px;
+  }
+  .lock-input:focus {
+    border-color: var(--accent);
+  }
+  .lock-btn {
+    padding: 9px 20px;
+    border-radius: 10px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .lock-btn:hover {
+    background: var(--accent-strong);
+  }
+  .lock-error {
+    color: #e5484d;
+    font-size: 13.5px;
+    margin: 10px 0 0;
+  }
+</style>
+
+<script>
+  // 浏览器端解密：PBKDF2 + AES-GCM，参数与构建端保持一致
+  async function deriveKey(password: string, salt: Uint8Array, iterations: number) {
+    const material = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(password),
+      "PBKDF2",
+      false,
+      ["deriveKey"]
+    );
+    return crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt: salt as BufferSource, iterations, hash: "SHA-256" },
+      material,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["decrypt"]
+    );
+  }
+
+  const b64ToBytes = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+  async function unlock(box: Element) {
+    const input = box.querySelector<HTMLInputElement>(".lock-input")!;
+    const error = box.querySelector<HTMLElement>(".lock-error")!;
+    const target = box.querySelector<HTMLElement>(".lock-target")!;
+
+    const salt = b64ToBytes(box.getAttribute("data-salt")!);
+    const iv = b64ToBytes(box.getAttribute("data-iv")!);
+    const data = b64ToBytes(box.getAttribute("data-data")!);
+    const iterations = Number(box.getAttribute("data-iterations") || "120000");
+
+    try {
+      const key = await deriveKey(input.value, salt, iterations);
+      const plain = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: iv as BufferSource },
+        key,
+        data as BufferSource
+      );
+      target.innerHTML = new TextDecoder().decode(plain);
+      target.hidden = false;
+      box.querySelector<HTMLElement>(".lock-ui")!.hidden = true;
+      error.hidden = true;
+    } catch {
+      error.hidden = false;
+    }
+  }
+
+  document.querySelectorAll(".locked-content").forEach((box) => {
+    const btn = box.querySelector<HTMLButtonElement>(".lock-btn")!;
+    const input = box.querySelector<HTMLInputElement>(".lock-input")!;
+    btn.addEventListener("click", () => unlock(box));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") unlock(box);
+    });
+  });
+</script>

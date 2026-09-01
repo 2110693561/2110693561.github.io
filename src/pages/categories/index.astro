@@ -1,0 +1,27 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { getSortedPosts, getCategoryMap, categoryUrl } from "../../utils/posts";
+
+const categories = getCategoryMap(await getSortedPosts());
+---
+
+<BaseLayout title="分类" description="博客全部分类索引。">
+  <div class="page-head">
+    <h1>分类</h1>
+    <p>共 {categories.size} 个分类</p>
+  </div>
+
+  {
+    categories.size === 0 ? (
+      <p class="search-hint">还没有分类。</p>
+    ) : (
+      <div class="chip-cloud">
+        {[...categories].map(([c, n]) => (
+          <a class="chip" href={categoryUrl(c)}>
+            {c} <span class="count">{n}</span>
+          </a>
+        ))}
+      </div>
+    )
+  }
+</BaseLayout>

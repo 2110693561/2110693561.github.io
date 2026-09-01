@@ -1,0 +1,39 @@
+---
+import type { CollectionEntry } from "astro:content";
+import type { EncryptedPayload } from "../utils/encrypt";
+import { formatDate } from "../utils/posts";
+import LockedContent from "./LockedContent.astro";
+
+interface Props {
+  note: CollectionEntry<"notes">;
+  /** 未加密时的渲染结果 HTML */
+  html?: string;
+  /** 有密码时的加密载荷 */
+  payload?: EncryptedPayload;
+}
+
+const { note, html, payload } = Astro.props;
+const base = import.meta.env.BASE_URL;
+---
+
+<article class="note-item">
+  <div class="card">
+    <div class="note-head">
+      {note.data.title && <h3>{note.data.title}</h3>}
+      <time>{formatDate(note.data.date)}</time>
+      {note.data.password && <span class="lock-badge">加密</span>}
+      {note.data.tags.map((t) => <span class="tag">{t}</span>)}
+      <a
+        class="edit-btn"
+        href={`${base}admin/#/collections/notes/entries/${note.id}`}
+        target="_blank"
+        title="在后台编辑这条随手记"
+      >
+        编辑
+      </a>
+    </div>
+    <div class="note-content">
+      {payload ? <LockedContent payload={payload} /> : <Fragment set:html={html} />}
+    </div>
+  </div>
+</article>

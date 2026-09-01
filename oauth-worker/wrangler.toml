@@ -1,0 +1,11 @@
+# Cloudflare Worker 配置：Decap CMS 的 GitHub OAuth 代理
+# 部署：
+#   npx wrangler login
+#   npx wrangler secret put GITHUB_CLIENT_ID
+#   npx wrangler secret put GITHUB_CLIENT_SECRET
+#   npx wrangler deploy
+# 部署完成后把 Worker 地址填入 public/admin/config.yml 的 base_url
+
+name = "decap-oauth-worker"
+main = "src/index.js"
+compatibility_date = "2026-01-01"

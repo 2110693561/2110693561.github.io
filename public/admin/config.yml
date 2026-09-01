@@ -1,0 +1,99 @@
+backend:
+  name: github
+  repo: 2110693561/2110693561.github.io
+  branch: main
+  # 部署 oauth-worker（Cloudflare Worker）之后，取消注释并填你的 Worker 地址，
+  # 线上后台才能通过 GitHub 登录写入仓库：
+  # base_url: https://你的-worker.workers.dev
+
+# 本地开发：另开一个终端运行 `npm run cms`，后台即可直接读写本地文件（无需登录）
+local_backend: true
+
+site_url: https://2110693561.github.io
+
+media_folder: public/images
+public_folder: /images
+
+collections:
+  # ---------- 文章 ----------
+  - name: blog
+    label: 文章
+    label_singular: 文章
+    folder: src/content/blog
+    slug: "{{year}}-{{month}}-{{day}}-{{slug}}"
+    create: true
+    editor:
+      preview: false
+    fields:
+      - { name: title, label: 标题, widget: string }
+      - { name: date, label: 日期, widget: datetime, format: "YYYY-MM-DD", date_format: "YYYY-MM-DD", time_format: false }
+      - { name: description, label: 摘要, widget: text, required: false, hint: 显示在列表卡片和搜索结果里 }
+      - { name: category, label: 分类, widget: string, required: false, default: 未分类 }
+      - { name: tags, label: 标签, widget: list, required: false, default: [] }
+      - { name: draft, label: 草稿（保存后不会发布）, widget: boolean, default: false, required: false }
+      - name: password
+        label: 查看密码
+        widget: string
+        required: false
+        hint: 设置后内容会加密，访客输入密码才能查看；留空则公开
+      - { name: body, label: 正文, widget: markdown }
+
+  # ---------- 随手记 ----------
+  - name: notes
+    label: 随手记
+    label_singular: 随手记
+    folder: src/content/notes
+    slug: "{{year}}-{{month}}-{{day}}-{{hour}}{{minute}}"
+    create: true
+    editor:
+      preview: false
+    fields:
+      - { name: date, label: 日期, widget: datetime, format: "YYYY-MM-DDTHH:mm", date_format: "YYYY-MM-DD", time_format: "HH:mm" }
+      - { name: title, label: 标题（可选）, widget: string, required: false }
+      - { name: tags, label: 标签, widget: list, required: false, default: [] }
+      - name: password
+        label: 查看密码
+        widget: string
+        required: false
+        hint: 设置后内容加密，像私密日记一样
+      - { name: body, label: 内容, widget: markdown }
+
+  # ---------- 段落批注 ----------
+  - name: annotations
+    label: 段落批注
+    label_singular: 批注
+    folder: src/data/annotations
+    format: json
+    slug: "{{year}}{{month}}{{day}}{{hour}}{{minute}}{{second}}"
+    create: true
+    editor:
+      preview: false
+    fields:
+      - name: post
+        label: 关联文章（文件名，不含 .md）
+        widget: string
+        hint: 例如 gd32-gpio-notes；在文章页点「批注」复制 JSON 后从这里取 post 字段
+      - { name: index, label: 段落序号, widget: number, value_type: int, min: 0, default: 0, hint: 从 0 开始，对应文章正文的第几个段落块 }
+      - { name: quote, label: 段落文字片段（帮助定位，可选）, widget: string, required: false }
+      - { name: content, label: 批注内容, widget: text }
+      - { name: date, label: 日期, widget: datetime, format: "YYYY-MM-DD", date_format: "YYYY-MM-DD", time_format: false }
+
+  # ---------- 项目展示 ----------
+  - name: projects
+    label: 项目展示
+    files:
+      - name: projects
+        label: 项目列表
+        file: src/data/projects.json
+        format: json
+        fields:
+          - name: projects
+            label: 项目
+            widget: list
+            fields:
+              - { name: name, label: 名称, widget: string }
+              - { name: description, label: 描述, widget: text }
+              - { name: url, label: 链接（可选）, widget: string, required: false }
+              - { name: repo, label: 仓库地址（可选）, widget: string, required: false }
+              - { name: tags, label: 标签, widget: list, required: false, default: [] }
+              - { name: hidden, label: 隐藏（不在网站显示）, widget: boolean, default: false, required: false }

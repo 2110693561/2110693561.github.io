@@ -1,0 +1,40 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { getSortedPosts, getTagMap, tagUrl, categoryUrl, getCategoryMap } from "../../utils/posts";
+
+const tags = getTagMap(await getSortedPosts());
+const categories = getCategoryMap(await getSortedPosts());
+---
+
+<BaseLayout title="标签" description="博客全部标签索引。">
+  <div class="page-head">
+    <h1>标签</h1>
+    <p>共 {tags.size} 个标签</p>
+  </div>
+
+  <div class="section-head"><h2>分类</h2></div>
+  <div class="chip-cloud">
+    {
+      [...categories].map(([c, n]) => (
+        <a class="chip" href={categoryUrl(c)}>
+          {c} <span class="count">{n}</span>
+        </a>
+      ))
+    }
+  </div>
+
+  <div class="section-head"><h2>标签</h2></div>
+  {
+    tags.size === 0 ? (
+      <p class="search-hint">还没有标签，去写篇文章吧。</p>
+    ) : (
+      <div class="chip-cloud">
+        {[...tags].map(([t, n]) => (
+          <a class="chip" href={tagUrl(t)}>
+            # {t} <span class="count">{n}</span>
+          </a>
+        ))}
+      </div>
+    )
+  }
+</BaseLayout>

@@ -1,0 +1,58 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import PostCard from "../../components/PostCard.astro";
+import { getSortedPosts, groupByYear, getTagMap, getCategoryMap, tagUrl, categoryUrl, postUrl, formatDate } from "../../utils/posts";
+
+const posts = await getSortedPosts();
+const years = groupByYear(posts);
+const tags = getTagMap(posts);
+const categories = getCategoryMap(posts);
+const base = import.meta.env.BASE_URL;
+---
+
+<BaseLayout title="文章" description="全部文章归档，按年份排列，支持按分类和标签筛选。">
+  <div class="page-head with-actions">
+    <div>
+      <h1>文章</h1>
+      <p>共 {posts.length} 篇 · 按时间归档</p>
+    </div>
+    <a class="btn primary" href={`${base}admin/#/collections/blog/new`} target="_blank">新建文章</a>
+  </div>
+
+  {
+    (categories.size > 0 || tags.size > 0) && (
+      <div class="chip-cloud">
+        {[...categories].map(([c, n]) => (
+          <a class="chip" href={categoryUrl(c)}>
+            {c} <span class="count">{n}</span>
+          </a>
+        ))}
+        {[...tags].map(([t, n]) => (
+          <a class="chip" href={tagUrl(t)}>
+            # {t} <span class="count">{n}</span>
+          </a>
+        ))}
+      </div>
+    )
+  }
+
+  {
+    years.map(([year, list]) => (
+      <>
+        <h2 class="archive-year">{year}</h2>
+        <ul class="archive-list">
+          {list.map((p) => (
+            <li>
+              <time>{formatDate(p.data.date)}</time>
+              <a class="a-title" href={postUrl(p.id)}>
+                {p.data.title}
+                {p.data.password && <span class="lock-badge">加密</span>}
+              </a>
+              <span class="a-cat">{p.data.category}</span>
+            </li>
+          ))}
+        </ul>
+      </>
+    ))
+  }
+</BaseLayout>

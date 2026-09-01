@@ -1,0 +1,47 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { SITE, SOCIALS } from "../config";
+
+const base = import.meta.env.BASE_URL;
+---
+
+<BaseLayout title="关于" description="关于我和这个博客。">
+  <div class="page-head">
+    <h1>关于</h1>
+  </div>
+
+  <article class="prose">
+    <p>
+      你好，我是 <strong>{SITE.author}</strong>，欢迎来到我的个人博客。
+    </p>
+    <p>
+      这里主要记录我的<strong>学习笔记、踩坑记录和项目实践</strong>，
+      包括嵌入式开发（GD32 / ESP32 / FreeRTOS）、Linux、Docker 以及 AI 相关的探索。
+      我相信「把踩过的坑变成自己的技术手册」，写作是最好的复盘方式。
+    </p>
+
+    <h2>关于本站</h2>
+    <ul>
+      <li><strong>文章</strong>：系统性的学习笔记和教程，可以在<a href={`${base}posts/`}>文章页</a>按年份归档浏览。</li>
+      <li><strong>随手记</strong>：日常碎片化记录，低门槛随手写，见<a href={`${base}notes/`}>随手记页</a>。</li>
+      <li><strong>项目</strong>：做过的开源项目和实践，见<a href={`${base}projects/`}>项目页</a>。</li>
+    </ul>
+
+    <h2>技术栈</h2>
+    <p>
+      本站使用 <a href="https://astro.build" target="_blank" rel="noopener">Astro</a>
+      构建，静态部署在 GitHub Pages，内容全部是仓库里的 Markdown 文件。
+    </p>
+
+    <h2>联系我</h2>
+    <ul>
+      {SOCIALS.map((s) => (
+        <li>
+          <a href={s.url} target={s.url.startsWith("http") ? "_blank" : undefined}>
+            {s.name}
+          </a>
+        </li>
+      ))}
+    </ul>
+  </article>
+</BaseLayout>

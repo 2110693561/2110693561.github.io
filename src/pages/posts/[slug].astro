@@ -1,0 +1,239 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import LockedContent from "../../components/LockedContent.astro";
+import Giscus from "../../components/Giscus.astro";
+import { getCollection, render } from "astro:content";
+import { experimental_AstroContainer as AstroContainer } from "astro/container";
+import { encryptForBrowser, type EncryptedPayload } from "../../utils/encrypt";
+import { loadAnnotations } from "../../utils/annotations";
+import {
+  getSortedPosts,
+  formatDate,
+  readingMinutes,
+  postUrl,
+  tagUrl,
+  categoryUrl,
+} from "../../utils/posts";
+
+export async function getStaticPaths() {
+  const posts = await getCollection("blog", ({ data }) => !data.draft);
+  return posts.map((post) => ({
+    params: { slug: post.id },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props;
+const { Content, headings } = await render(post);
+
+// 密码保护：构建时加密渲染后的 HTML，浏览器输入密码解锁
+let encrypted: EncryptedPayload | undefined;
+if (post.data.password) {
+  const container = await AstroContainer.create();
+  const html = await container.renderToString(Content);
+  encrypted = encryptForBrowser(html, post.data.password);
+}
+
+// 段落批注（存放在 src/data/annotations/*.json）
+const annotations = (loadAnnotations().get(post.id) ?? [])
+  .slice()
+  .sort((a, b) => a.index - b.index);
+const annotationJson = JSON.stringify(annotations).replace(/</g, "\\u003c");
+
+// 上下篇导航（列表按日期倒序）
+const allPosts = await getSortedPosts();
+const idx = allPosts.findIndex((p) => p.id === post.id);
+const older = allPosts[idx + 1];
+const newer = allPosts[idx - 1];
+
+const toc = headings.filter((h) => h.depth >= 2 && h.depth <= 4);
+const minutes = readingMinutes(post.body);
+const base = import.meta.env.BASE_URL;
+---
+
+<BaseLayout title={post.data.title} description={post.data.description || undefined}>
+  <header class="post-header">
+    <h1>{post.data.title}</h1>
+    <div class="post-meta">
+      <span>{formatDate(post.data.date)}</span>
+      <a href={categoryUrl(post.data.category)}>{post.data.category}</a>
+      <span>约 {minutes} 分钟</span>
+      {post.data.password && <span class="lock-badge">已加密</span>}
+      <a class="edit-btn" href={`${base}admin/#/collections/blog/entries/${post.id}`} target="_blank">编辑</a>
+    </div>
+    {
+      post.data.tags.length > 0 && (
+        <div class="tags" style="margin-top: 8px;">
+          {post.data.tags.map((t) => (
+            <a class="tag" href={tagUrl(t)}>
+              {t}
+            </a>
+          ))}
+        </div>
+      )
+    }
+  </header>
+
+  <div class="post-layout">
+    {
+      encrypted ? (
+        <article class="prose">
+          <LockedContent payload={encrypted} />
+        </article>
+      ) : (
+        <article class="prose" id="post-body" data-post={post.id}>
+          <Content />
+        </article>
+      )
+    }
+
+    {
+      toc.length > 0 && (
+        <aside class="toc" aria-label="文章目录">
+          <div class="toc-title">目录</div>
+          {toc.map((h) => (
+            <a class={`lv${h.depth}`} href={`#${h.slug}`}>
+              {h.text}
+            </a>
+          ))}
+        </aside>
+      )
+    }
+  </div>
+
+  {!encrypted && (
+    <script type="application/json" id="annotation-data" set:html={annotationJson} />
+  )}
+
+  <nav class="post-nav" aria-label="上下篇">
+    {
+      older ? (
+        <a href={postUrl(older.id)}>
+          <div class="pn-label">← 更早</div>
+          <div class="pn-title">{older.data.title}</div>
+        </a>
+      ) : (
+        <span />
+      )
+    }
+    {
+      newer ? (
+        <a class="next" href={postUrl(newer.id)}>
+          <div class="pn-label">更新 →</div>
+          <div class="pn-title">{newer.data.title}</div>
+        </a>
+      ) : (
+        <span />
+      )
+    }
+  </nav>
+
+  {!encrypted && <Giscus />}
+</BaseLayout>
+
+<script>
+  // ============ 段落批注 UI ============
+  // 已有批注在段落旁显示；鼠标悬停段落可新增批注（复制 JSON 后到后台保存）
+  const body = document.getElementById("post-body");
+  if (body) {
+    const base = import.meta.env.BASE_URL;
+    const dataEl = document.getElementById("annotation-data");
+    const annotations: Array<{ post: string; index: number; quote?: string; content: string; date: string }> =
+      dataEl ? JSON.parse(dataEl.textContent || "[]") : [];
+    const blocks = Array.from(body.children) as HTMLElement[];
+
+    const findBlock = (anno: { index: number; quote?: string }) => {
+      if (anno.quote) {
+        const hit = blocks.find((b) => (b.textContent || "").includes(anno.quote!));
+        if (hit) return hit;
+      }
+      return blocks[anno.index] ?? null;
+    };
+
+    // 渲染已有批注
+    for (const anno of annotations) {
+      const anchor = findBlock(anno);
+      if (!anchor) continue;
+      const card = document.createElement("aside");
+      card.className = "annotation-card";
+      const quote = document.createElement("div");
+      quote.className = "anno-quote";
+      quote.textContent = anno.quote ? `「${anno.quote.slice(0, 60)}」` : "";
+      const content = document.createElement("div");
+      content.className = "anno-content";
+      content.textContent = anno.content;
+      const date = document.createElement("div");
+      date.className = "anno-date";
+      date.textContent = anno.date || "";
+      card.append(quote, content, date);
+      anchor.insertAdjacentElement("afterend", card);
+    }
+
+    // 悬停出现的「批注」按钮
+    const hoverBtn = document.createElement("button");
+    hoverBtn.type = "button";
+    hoverBtn.className = "anno-float";
+    hoverBtn.textContent = "批注";
+    hoverBtn.hidden = true;
+    document.body.appendChild(hoverBtn);
+
+    let currentBlock: HTMLElement | null = null;
+    let currentIndex = -1;
+    let formOpen = false;
+
+    blocks.forEach((block, i) => {
+      block.addEventListener("mouseenter", () => {
+        if (block.classList.contains("annotation-card") || block.classList.contains("anno-form")) return;
+        currentBlock = block;
+        currentIndex = i;
+        const rect = block.getBoundingClientRect();
+        hoverBtn.style.top = `${Math.max(8, rect.top - 14)}px`;
+        hoverBtn.style.left = `${Math.min(rect.right - 10, window.innerWidth - 60)}px`;
+        hoverBtn.hidden = false;
+      });
+    });
+    hoverBtn.addEventListener("mouseleave", () => (hoverBtn.hidden = true));
+    hoverBtn.addEventListener("mouseenter", () => (hoverBtn.hidden = false));
+
+    const closeForm = () => {
+      document.querySelectorAll(".anno-form").forEach((f) => f.remove());
+      formOpen = false;
+      hoverBtn.hidden = true;
+    };
+
+    hoverBtn.addEventListener("click", () => {
+      if (formOpen) return closeForm();
+      if (!currentBlock) return;
+      formOpen = true;
+
+      const form = document.createElement("div");
+      form.className = "anno-form";
+      form.innerHTML = `
+        <textarea placeholder="写点批注…"></textarea>
+        <div class="anno-form-actions">
+          <button type="button" class="anno-copy">复制批注 JSON</button>
+          <a class="anno-admin" href="${base}admin/#/collections/annotations/new" target="_blank">去后台保存</a>
+          <button type="button" class="anno-cancel">取消</button>
+        </div>
+        <p class="anno-tip">复制 JSON 后，打开后台 → 段落批注 → 新建，把各字段填入表单保存，网站重新构建后即显示。</p>`;
+      currentBlock.insertAdjacentElement("afterend", form);
+
+      form.querySelector<HTMLButtonElement>(".anno-copy")!.addEventListener("click", async (e) => {
+        const payload = {
+          post: body.getAttribute("data-post") || "",
+          index: currentIndex,
+          quote: (currentBlock!.textContent || "").trim().slice(0, 60),
+          content: form.querySelector<HTMLTextAreaElement>("textarea")!.value.trim(),
+          date: new Date().toISOString().slice(0, 10),
+        };
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+          e.currentTarget!.textContent = "已复制";
+        } catch {
+          e.currentTarget!.textContent = "复制失败，请手动复制";
+        }
+      });
+      form.querySelector(".anno-cancel")!.addEventListener("click", closeForm);
+    });
+  }
+</script>
