@@ -57,7 +57,7 @@ collections:
     slug: "{{year}}-{{month}}-{{day}}-{{slug}}"
     create: true
     editor:
-      preview: false
+      preview: true
     sortable_fields: [date, title]
     view_filters:
       - { label: 已发布, field: draft, pattern: false }
@@ -87,7 +87,7 @@ collections:
     slug: "{{year}}-{{month}}-{{day}}-{{hour}}{{minute}}"
     create: true
     editor:
-      preview: false
+      preview: true
     view_filters:
       - { label: 已发布, field: draft, pattern: false }
       - { label: 草稿, field: draft, pattern: true }
