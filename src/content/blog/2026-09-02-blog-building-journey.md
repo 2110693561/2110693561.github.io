@@ -12,7 +12,7 @@ tags: [Astro, Decap CMS, GitHub Pages, Cloudflare, 踩坑]
 
 先看现在这个站已经有什么：
 
-- **前台**：文章（分类/标签/归档）、随手记时间线、资料预览页、项目展示、全文搜索、RSS、明暗主题
+- **前台**：文章（分类/标签/归档）、随手记时间线、资料预览页、项目展示、全文搜索、RSS、明暗主题、giscus 评论
 - **后台**（`/admin/`）：完全在网页上写作和管理，不需要本地环境，不需要手动 git
 - **内容管理**：草稿、隐藏、密码加密、批量上传、本地笔记导入、划段批注
 - **托管成本**：0 元（GitHub Pages + Cloudflare 免费额度）
@@ -330,7 +330,8 @@ CMS.registerPreviewTemplate("notes", MarkdownPreview);
 - **文章 TOC 目录**：右侧悬浮显示 h2/h3 层级，滚动高亮当前小节（IntersectionObserver）
 - **代码块增强**：语法高亮主题统一 + 一键复制按钮
 - **图片优化**：懒加载（`loading="lazy"` 已有，补充 `srcset` 响应式）+ 转 WebP/AVIF + `astro:assets` 统一管理
-- **评论系统**：接 giscus，用 GitHub Discussions 存评论，依然零服务器
+
+> 评论系统已上线：用的就是 giscus（GitHub Discussions 存储），仓库 Discussions 开启 + 安装 [giscus App](https://github.com/apps/giscus) + 填入 `repoId` / `categoryId` 三步搞定，评论区主题跟随站点明暗切换，滚动到才懒加载。
 
 ### 中期（能力扩展)
 
