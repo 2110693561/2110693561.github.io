@@ -1025,15 +1025,33 @@
           var name = prompt("给这批资料起个名称：", "资料 " + todayStr());
           if (!name) return;
           try {
-            var urls = [];
-            for (var i = 0; i < arr.length; i++) {
-              var f = arr[i];
-              toast("上传中 " + (i + 1) + "/" + arr.length + "：" + f.name);
-              var fname = Date.now().toString(36) + "-" + safeName(f.name);
-              var path = "public/files/" + fname;
-              await ghPutFile(t, path, await b64OfBlob(f), "上传资料：" + f.name);
-              urls.push("/files/" + fname);
+            var urls = new Array(arr.length);
+            var failed = [];
+            var done = 0;
+            var idx = 0;
+            var CONC = 4; // 并行上传数
+            async function worker() {
+              while (idx < arr.length) {
+                var i = idx++;
+                var f = arr[i];
+                try {
+                  toast("上传中 " + (done + 1) + "/" + arr.length + "：" + f.name);
+                  var fname = Date.now().toString(36) + "-" + i + "-" + safeName(f.name);
+                  await ghPutFile(t, "public/files/" + fname, await b64OfBlob(f), "上传资料：" + f.name);
+                  urls[i] = "/files/" + fname;
+                } catch (err) {
+                  failed.push(f.name + "：" + ((err && err.message) || err));
+                }
+                done++;
+              }
             }
+            var workers = [];
+            for (var w = 0; w < Math.min(CONC, arr.length); w++) workers.push(worker());
+            await Promise.all(workers);
+            urls = urls.filter(Boolean);
+            if (!urls.length)
+              throw new Error("全部文件上传失败：" + failed.join("；"));
+            if (failed.length) toast(failed.length + " 个文件失败，其余已上传，正在创建资料条目…");
             var base = safeName(name);
             var slug = base;
             var fm =
