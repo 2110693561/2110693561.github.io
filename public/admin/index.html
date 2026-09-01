@@ -315,6 +315,21 @@
       #qa-bulk-upload:hover {
         background: #3d4360;
       }
+      /* ---------- 导入笔记按钮 ---------- */
+      #qa-import-notes {
+        background: #2e3348;
+        color: #fff !important;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 18px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        margin-right: 8px;
+      }
+      #qa-import-notes:hover {
+        background: #3d4360;
+      }
       #nc-root .qa-toast {
         position: fixed;
         left: 50%;
@@ -1315,6 +1330,81 @@
           true
         );
 
+        // 随手记：导入本地 md / txt 笔记文件（可多选），文件名即标题
+        var noteInput = document.createElement("input");
+        noteInput.type = "file";
+        noteInput.multiple = true;
+        noteInput.accept = ".md,.markdown,.txt";
+        noteInput.style.display = "none";
+        noteInput.addEventListener("change", function () {
+          var fl = Array.prototype.slice.call(noteInput.files);
+          noteInput.value = "";
+          if (!fl.length) return;
+          (async function () {
+            var t = token();
+            if (!t) {
+              alert("导入需要登录令牌，请退出后台重新登录");
+              return;
+            }
+            try {
+              var okCount = 0;
+              for (var i = 0; i < fl.length; i++) {
+                var f = fl[i];
+                toast("导入中 " + (i + 1) + "/" + fl.length + "：" + f.name);
+                var raw = await f.text();
+                // 文件本身带 frontmatter 的原样导入，否则补上标题和日期
+                var hasFm = /^\uFEFF?---\s*\r?\n/.test(raw);
+                var base = f.name.replace(/\.(md|markdown|txt)$/i, "");
+                var body = hasFm
+                  ? raw
+                  : '---\ntitle: "' +
+                    base.replace(/"/g, '\\"') +
+                    '"\ndate: ' +
+                    todayStr() +
+                    "\ntags: []\n---\n\n" +
+                    raw;
+                var fname = Date.now().toString(36) + "-" + i + "-" + safeName(base) + ".md";
+                await ghPutFile(t, "src/content/notes/" + fname, b64(body), "导入随手记：" + base);
+                okCount++;
+              }
+              toast("已导入 " + okCount + " 篇随手记，构建后生效");
+              setTimeout(function () {
+                location.reload();
+              }, 1500);
+            } catch (err) {
+              alert("导入失败：" + ((err && err.message) || err));
+            }
+          })();
+        });
+
+        function injectImport() {
+          if (collection() !== "notes") {
+            var oldImp = document.getElementById("qa-import-notes");
+            if (oldImp) oldImp.remove();
+            return;
+          }
+          if (document.getElementById("qa-import-notes")) return;
+          var anchor = null;
+          var cands = document.querySelectorAll("#nc-root button, #nc-root a");
+          for (var i = 0; i < cands.length; i++) {
+            var txt = (cands[i].textContent || "").trim();
+            if (/^\+\s*随手记$/.test(txt)) {
+              anchor = cands[i];
+              break;
+            }
+          }
+          if (!anchor) return;
+          var btn = document.createElement("button");
+          btn.id = "qa-import-notes";
+          btn.type = "button";
+          btn.textContent = "导入笔记";
+          btn.title = "选择本地 .md / .txt 笔记文件（可 Ctrl 多选），自动导入为随手记；文件名即标题";
+          btn.addEventListener("click", function () {
+            noteInput.click();
+          });
+          if (anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor);
+        }
+
         // 资料集合的媒体库弹窗：隐藏「媒体资源」旧文件列表，自动停在「上传新的」
         function tameMediaLibrary() {
           if (collection() !== "files") return;
@@ -1346,6 +1436,7 @@
             pending = null;
             ensure();
             injectUpload();
+            injectImport();
             tameMediaLibrary();
           }, 300);
         });
@@ -1353,16 +1444,19 @@
           if (document.body) {
             document.body.appendChild(bulkInput);
             document.body.appendChild(attInput);
+            document.body.appendChild(noteInput);
             mo.observe(document.body, { childList: true, subtree: true });
             window.addEventListener("hashchange", function () {
               setTimeout(function () {
                 ensure();
                 injectUpload();
+                injectImport();
                 tameMediaLibrary();
               }, 400);
             });
             ensure();
             injectUpload();
+            injectImport();
             tameMediaLibrary();
           } else {
             setTimeout(start, 60);
