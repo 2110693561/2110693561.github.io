@@ -577,7 +577,7 @@
         var GH = "https://api.github.com";
         var REPO = "2110693561/2110693561.github.io";
         var BRANCH = "main";
-        var LABELS = { blog: "文章", notes: "随手记" };
+        var LABELS = { blog: "文章", notes: "随手记", annotations: "批注", files: "资料" };
         var cache = {}; // key: col/slug -> { sha, text, state }
 
         function token() {
@@ -634,7 +634,7 @@
           }, 2200);
         }
         function collection() {
-          var m = location.hash.match(/^#\/collections\/(blog|notes)\/?$/);
+          var m = location.hash.match(/^#\/collections\/(blog|notes|annotations|files)\/?$/);
           return m ? m[1] : null;
         }
         function parseState(fm) {
@@ -655,13 +655,15 @@
         async function load(col, slug) {
           var t = token();
           if (!t) throw new Error("未检测到登录令牌，请退出后台重新登录");
-          // 批注集合是 JSON 文件，存放在 src/data/annotations/
+          // 批注集合是 JSON 文件，存放在 src/data/annotations/；资料集合的 md 存放在 src/files/
           var exts = col === "annotations" ? ["json"] : ["md", "mdx"];
           for (var i = 0; i < exts.length; i++) {
             var path =
               col === "annotations"
                 ? "src/data/annotations/" + slug + ".json"
-                : "src/content/" + col + "/" + slug + "." + exts[i];
+                : col === "files"
+                  ? "src/files/" + slug + ".md"
+                  : "src/content/" + col + "/" + slug + "." + exts[i];
             var res = await fetch(GH + "/repos/" + REPO + "/contents/" + path + "?ref=" + BRANCH, {
               headers: gh(t),
               cache: "no-store",

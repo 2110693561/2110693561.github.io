@@ -158,8 +158,8 @@ collections:
     create: true
     editor:
       preview: false
-    # 此集合里上传的文件保存到 public/files/（线上访问地址：/files/文件名）
-    media_folder: public/files
+    # 此集合里上传的文件保存到 public/files/（前导斜杠 = 相对仓库根目录，避免被解析到集合目录里）
+    media_folder: /public/files
     public_folder: /files
     fields:
       - { name: title, label: 名称, widget: string }
