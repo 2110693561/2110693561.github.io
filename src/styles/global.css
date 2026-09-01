@@ -254,8 +254,6 @@ a.card:hover h3 { color: var(--accent); }
   margin: 1em 0;
   padding: 4px 16px;
   border-left: 3px solid var(--accent);
-  background: var(--accent-soft);
-  border-radius: 0 10px 10px 0;
   color: var(--muted);
 }
 .prose blockquote p { margin: 0.4em 0; }

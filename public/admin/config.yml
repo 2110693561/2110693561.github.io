@@ -34,16 +34,18 @@ collections:
           - { name: author, label: 作者名（首页问候语、页脚版权）, widget: string }
           - { name: title, label: 浏览器标签页标题, widget: string }
           - { name: description, label: 站点描述（首页副标题、搜索引擎展示）, widget: text }
-          - name: logo
-            label: 左上角 Logo（可选）
-            widget: string
-            required: false
-            hint: 填图片链接（https://... 或 /images/xx.png，可先在媒体库上传）或一个 emoji（如 📝）；留空则只显示站点名
           - name: favicon
-            label: 标签页图标（可选）
-            widget: string
+            label: 浏览器标签页图标
+            widget: image
             required: false
-            hint: 默认 /favicon.svg；可填图片链接更换
+            choose_url: true
+            hint: 显示在浏览器标签页上的小图标（favicon）。可从媒体库选择、上传本地图片或粘贴链接；留空用默认 /favicon.svg。保存后需刷新浏览器标签页才会更新
+          - name: logo
+            label: 导航栏 Logo（可选）
+            widget: image
+            required: false
+            choose_url: true
+            hint: 网站页面内左上角的标志图片（不是浏览器图标）。可从媒体库选择、上传本地图片或粘贴链接；留空只显示站点名
           - { name: github, label: GitHub 主页链接, widget: string, required: false }
           - { name: repo, label: GitHub 仓库（批注直写用，一般不用改）, widget: string, required: true }
 
@@ -147,3 +149,23 @@ collections:
                 hint: 填 owner/仓库名（如 2110693561/mynote）或完整链接，项目卡片会生成可点击的跳转链接
               - { name: tags, label: 标签, widget: list, required: false, default: [] }
               - { name: hidden, label: 隐藏（不在网站显示）, widget: boolean, default: false, required: false }
+
+  # ---------- 资料上传 ----------
+  - name: files
+    label: 资料上传
+    label_singular: 资料
+    folder: src/files
+    create: true
+    editor:
+      preview: false
+    # 此集合里上传的文件保存到 public/files/（线上访问地址：/files/文件名）
+    media_folder: public/files
+    public_folder: /files
+    fields:
+      - { name: title, label: 名称, widget: string }
+      - { name: date, label: 上传日期, widget: datetime, format: "YYYY-MM-DD", date_format: "YYYY-MM-DD", time_format: false }
+      - name: attachment
+        label: 文件
+        widget: file
+        hint: 上传本地任意文件（md / pdf / zip / 图片等），也可从媒体库选择已有文件；上传后点击文件名可复制访问链接
+      - { name: description, label: 说明（可选）, widget: text, required: false }

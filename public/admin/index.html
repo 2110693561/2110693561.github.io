@@ -59,9 +59,14 @@
         border-radius: var(--radius-sm);
         transition: background 0.14s ease, color 0.14s ease;
       }
+      #nc-root [class*="sidebar" i] [class*="link" i]:hover {
+        background: #f0f2f6;
+      }
+      /* 侧边栏选中态：中性灰，不用蓝色 */
       #nc-root [class*="sidebar" i] [class*="active" i] {
-        background: var(--accent-soft);
-        color: var(--accent) !important;
+        background: #e9ecf2;
+        color: var(--text) !important;
+        font-weight: 600;
       }
 
       /* ---------- 列表卡片 ---------- */
@@ -145,15 +150,16 @@
         background: transparent;
       }
 
-      /* ---------- 「回到博客」按钮（JS 注入到顶栏） ---------- */
+      /* ---------- 「回到主页」入口（JS 注入到侧边栏顶部） ---------- */
       #back-to-blog {
         display: inline-flex;
         align-items: center;
         gap: 5px;
+        margin: 14px 16px 8px;
         padding: 6px 14px;
         border-radius: 999px;
-        background: var(--accent-soft);
-        color: var(--accent) !important;
+        background: #eceef4;
+        color: var(--text) !important;
         font-size: 13px;
         font-weight: 600;
         text-decoration: none;
@@ -161,8 +167,8 @@
         transition: background 0.15s ease, color 0.15s ease;
       }
       #back-to-blog:hover {
-        background: var(--accent);
-        color: #ffffff !important;
+        background: #e0e3ec;
+        color: var(--text) !important;
       }
       @media (max-width: 720px) {
         #back-to-blog {
@@ -170,26 +176,176 @@
           font-size: 12px;
         }
       }
+
+      /* ---------- 「暂存草稿」按钮（注入在编辑器「保存」按钮左侧） ---------- */
+      #save-draft-btn {
+        padding: 6px 16px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--panel);
+        color: var(--text) !important;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-right: 8px;
+        white-space: nowrap;
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+      #save-draft-btn:hover {
+        border-color: #b9bed0;
+        background: #f6f7fb;
+      }
     </style>
   </head>
   <body>
     <!-- Decap CMS：文章 / 随手记 / 批注 / 项目 的网页管理后台 -->
     <script src="https://cdn.jsdelivr.net/npm/decap-cms@3/dist/decap-cms.js"></script>
     <script>
-      // 在后台顶栏注入「← 回到博客」快捷按钮
+      // 侧边栏增强：顶部注入「← 回到主页」入口，并隐藏左上角「集合」小标题
       (function () {
         var SITE_URL = "https://2110693561.github.io/";
+
+        function sidebar() {
+          return document.querySelector('#nc-root [class*="sidebar" i]');
+        }
+
+        // 侧边栏顶部「集合 / Collections」小标题是多余的，直接隐藏
+        function hideHeading() {
+          var sb = sidebar();
+          if (!sb) return;
+          Array.prototype.forEach.call(sb.querySelectorAll("*"), function (el) {
+            if (el.children.length) return;
+            var t = (el.textContent || "").trim();
+            if (t === "集合" || /^collections$/i.test(t)) el.style.display = "none";
+          });
+        }
+
         function ensure() {
           if (document.getElementById("back-to-blog")) return;
-          var bar = document.querySelector('[class*="appBar" i]');
-          if (!bar) return;
+          var host = sidebar() || document.querySelector('[class*="appBar" i]');
+          if (!host) return;
           var a = document.createElement("a");
           a.id = "back-to-blog";
           a.href = SITE_URL;
-          a.textContent = "← 回到博客";
-          bar.insertBefore(a, bar.firstChild);
+          a.title = "打开博客首页";
+          a.textContent = "← 回到主页";
+          host.insertBefore(a, host.firstChild);
         }
-        var mo = new MutationObserver(ensure);
+
+        var pending = null;
+        var mo = new MutationObserver(function () {
+          if (pending) return;
+          pending = setTimeout(function () {
+            pending = null;
+            ensure();
+            hideHeading();
+          }, 200);
+        });
+        function start() {
+          if (document.body) {
+            mo.observe(document.body, { childList: true, subtree: true });
+            ensure();
+            hideHeading();
+          } else {
+            setTimeout(start, 60);
+          }
+        }
+        start();
+      })();
+
+      // 文件型集合（站点设置 / 项目列表）只有一个条目：
+      // 点击侧边栏后自动跳过列表页，直接进入编辑页
+      (function () {
+        var SINGLE = { settings: "site", projects: "projects" };
+        function skip() {
+          var m = location.hash.match(/^#\/collections\/([a-zA-Z_-]+)\/?$/);
+          if (m && SINGLE[m[1]]) {
+            location.replace("#/collections/" + m[1] + "/entries/" + SINGLE[m[1]]);
+          }
+        }
+        window.addEventListener("hashchange", skip);
+        // 兜底：Decap 内部路由偶尔不触发 hashchange，用轻量轮询补上
+        setInterval(skip, 400);
+      })();
+
+      // 「暂存草稿」按钮：一键把当前文章/随手记标记为草稿并保存（提交到仓库，但网站不显示）
+      // 仅在含「草稿」开关的编辑页出现；想发布时关掉草稿开关再点「保存」即可
+      (function () {
+        function draftBox() {
+          var labels = Array.prototype.slice.call(document.querySelectorAll("#nc-root label"));
+          var label = labels.find(function (l) {
+            return /^草稿/.test((l.textContent || "").trim());
+          });
+          if (!label) return null;
+          if (label.htmlFor) {
+            var byFor = document.getElementById(label.htmlFor);
+            if (byFor && byFor.type === "checkbox") return byFor;
+          }
+          var own = label.querySelector('input[type="checkbox"]');
+          if (own) return own;
+          var node = label;
+          for (var i = 0; i < 6 && node; i++) {
+            node = node.parentElement;
+            if (!node) break;
+            var box = node.querySelector('input[type="checkbox"]');
+            if (box) return box;
+          }
+          return null;
+        }
+
+        function saveButton() {
+          var btns = Array.prototype.slice.call(document.querySelectorAll("#nc-root button"));
+          return btns.find(function (b) {
+            if (b.id === "save-draft-btn") return false;
+            var t = (b.textContent || "").trim();
+            return t === "保存" || /^保存/.test(t) || /^Save$/i.test(t);
+          });
+        }
+
+        function onClick() {
+          // 1) 打开草稿开关（若未开）
+          var box = draftBox();
+          if (box && !box.checked) box.click();
+          // 2) 等保存按钮变为可用后点击（React 状态更新有短暂延迟）
+          var tries = 0;
+          (function trySave() {
+            var save = saveButton();
+            if (save && !save.disabled) {
+              save.click();
+              return;
+            }
+            if (++tries < 15) setTimeout(trySave, 120);
+          })();
+        }
+
+        function ensure() {
+          var existing = document.getElementById("save-draft-btn");
+          // 没有「草稿」开关的页面（设置/批注/项目/资料）不显示该按钮
+          if (!draftBox()) {
+            if (existing) existing.remove();
+            return;
+          }
+          if (existing) return;
+          var save = saveButton();
+          if (!save) return;
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.id = "save-draft-btn";
+          btn.textContent = "暂存草稿";
+          btn.title = "保存为草稿：网站不显示、RSS/搜索也不收录；写完想发布时关掉草稿开关再保存";
+          btn.addEventListener("click", onClick);
+          save.parentElement.insertBefore(btn, save);
+        }
+
+        // 节流监听 DOM 变化：页面切换/重渲染后自动补挂按钮
+        var pending = null;
+        var mo = new MutationObserver(function () {
+          if (pending) return;
+          pending = setTimeout(function () {
+            pending = null;
+            ensure();
+          }, 200);
+        });
         function start() {
           if (document.body) {
             mo.observe(document.body, { childList: true, subtree: true });

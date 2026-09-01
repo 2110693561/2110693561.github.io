@@ -32,7 +32,11 @@ const isActive = (href: string) => (href.replace(/\/$/, "") || "/") === currentP
     <meta name="author" content={SITE.author} />
     <meta name="generator" content={Astro.generator} />
     <link rel="canonical" href={canonical} />
-    <link rel="icon" type="image/svg+xml" href={SITE.favicon.startsWith("http") ? SITE.favicon : `${base}${SITE.favicon.replace(/^\//, "")}`} />
+    <link
+      rel="icon"
+      type={SITE.favicon.endsWith(".png") ? "image/png" : SITE.favicon.endsWith(".ico") ? "image/x-icon" : SITE.favicon.endsWith(".svg") ? "image/svg+xml" : undefined}
+      href={SITE.favicon.startsWith("http") ? SITE.favicon : `${base}${SITE.favicon.replace(/^\//, "")}`}
+    />
     <link rel="alternate" type="application/rss+xml" title={SITE.name} href={`${base}rss.xml`} />
     <link rel="sitemap" href={`${base}sitemap-index.xml`} />
     <meta property="og:site_name" content={SITE.name} />
