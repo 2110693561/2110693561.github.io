@@ -1386,25 +1386,9 @@
             return;
           }
           if (document.getElementById("qa-import-notes")) return;
-          // 放在「排序 / 筛选」工具行最右侧
-          var row = null;
-          var els = document.querySelectorAll("#nc-root button, #nc-root span, #nc-root div");
-          for (var i = 0; i < els.length; i++) {
-            var t = (els[i].textContent || "").trim();
-            if (t === "排序" || t.indexOf("排序") === 0) {
-              // 向上找到同时包含「筛选」的行容器
-              var p = els[i];
-              for (var u = 0; u < 4 && p; u++) {
-                p = p.parentElement;
-                if (p && (p.textContent || "").indexOf("筛选") !== -1) {
-                  row = p;
-                  break;
-                }
-              }
-              break;
-            }
-          }
-          if (!row) return;
+          // 放在顶部标题卡「+ 随手记」新建按钮左侧
+          var anchor = document.querySelector('#nc-root a[href*="collections/notes/new"]');
+          if (!anchor) return;
           var btn = document.createElement("button");
           btn.id = "qa-import-notes";
           btn.type = "button";
@@ -1414,7 +1398,8 @@
           btn.addEventListener("click", function () {
             noteInput.click();
           });
-          row.appendChild(btn);
+          if (anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor);
+          else anchor.parentElement.appendChild(btn);
         }
 
         // 资料集合的媒体库弹窗：隐藏「媒体资源」旧文件列表，自动停在「上传新的」
