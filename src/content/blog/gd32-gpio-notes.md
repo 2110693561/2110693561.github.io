@@ -7,7 +7,7 @@ tags:
   - GD32
   - GPIO
   - 外设
-draft: true
+draft: false
 ---
 
 记录 GD32 GPIO 的学习笔记，以 GD32F4xx 系列为例。
