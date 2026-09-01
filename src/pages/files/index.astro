@@ -39,7 +39,7 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
   <div class="page-head with-actions">
     <div>
       <h1>资料</h1>
-      <p>共 {files.length} 份 · 图片 / PDF / 文本可直接预览，其他类型提供下载</p>
+      <p>共 {files.length} 份 · 图片 / PDF / Markdown 直接在页面内显示，其他类型提供下载</p>
     </div>
     <a class="btn primary" href={`${base}/admin/#/collections/files/new`} target="_blank">上传资料</a>
   </div>
@@ -68,21 +68,19 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
             {urls.map((u) => {
               const kind = kindOf(u);
               return (
-                <div class="file-row">
-                  <span class="file-badge">{(extOf(u) || "file").toUpperCase()}</span>
-                  <span class="file-name" title={nameOf(u)}>
-                    {nameOf(u)}
-                  </span>
-                  <div class="file-actions">
-                    {kind !== "file" && (
-                      <button type="button" class="btn file-preview-btn" data-url={u} data-kind={kind}>
-                        预览
-                      </button>
-                    )}
-                    <a class="btn" href={u} target="_blank" rel="noopener" download>
-                      下载
-                    </a>
+                <div class="file-item">
+                  <div class="file-row">
+                    <span class="file-badge">{(extOf(u) || "file").toUpperCase()}</span>
+                    <span class="file-name" title={nameOf(u)}>
+                      {nameOf(u)}
+                    </span>
+                    <div class="file-actions">
+                      <a class="btn" href={u} target="_blank" rel="noopener" download>
+                        下载
+                      </a>
+                    </div>
                   </div>
+                  {kind !== "file" && <div class="file-inline" data-url={u} data-kind={kind} />}
                 </div>
               );
             })}
@@ -144,25 +142,37 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
       lastFocus?.focus();
     }
 
-    async function renderInto(kind: string, url: string) {
+    // 把一个文件的内嵌预览填充到指定容器（列表内嵌与放大弹窗共用）
+    async function fillPreview(kind: string, url: string, box: HTMLElement) {
       const ext = (url.split("?")[0].split(".").pop() || "").toLowerCase();
       if (kind === "image") {
         const img = document.createElement("img");
         img.src = url;
         img.alt = "";
-        body.appendChild(img);
+        img.loading = "lazy";
+        img.title = "点击放大";
+        img.addEventListener("click", () => {
+          openModal("查看图片", url);
+          body.innerHTML = "";
+          const big = document.createElement("img");
+          big.src = url;
+          big.alt = "";
+          body.appendChild(big);
+        });
+        box.appendChild(img);
         return;
       }
       if (kind === "pdf") {
         const iframe = document.createElement("iframe");
         iframe.src = url;
-        body.appendChild(iframe);
+        iframe.loading = "lazy";
+        box.appendChild(iframe);
         return;
       }
       // 文本类：md 走 marked 渲染，其余放进 pre
       const pre = document.createElement("div");
       pre.className = "file-text" + (ext === "md" || ext === "markdown" ? " rendered-md" : " raw-pre");
-      body.appendChild(pre);
+      box.appendChild(pre);
       pre.textContent = "加载中…";
       let text = "";
       try {
@@ -170,7 +180,7 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
         if (!res.ok) throw new Error(String(res.status));
         text = await res.text();
       } catch {
-        pre.textContent = "加载失败，请用「新窗口打开」查看原文件。";
+        pre.textContent = "加载失败，请用「下载」查看原文件。";
         return;
       }
       if (ext === "md" || ext === "markdown") {
@@ -187,16 +197,9 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
       }
     }
 
-    document.querySelectorAll<HTMLButtonElement>(".file-preview-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const card = btn.closest(".file-card") as HTMLElement;
-        const title =
-          card?.querySelector<HTMLElement>(".file-head h3")?.textContent?.trim() || "预览";
-        const url = btn.dataset.url!;
-        openModal(title, url);
-        body.innerHTML = "";
-        renderInto(btn.dataset.kind!, url);
-      });
+    // 页面加载后自动内嵌预览所有可直接显示的文件
+    document.querySelectorAll<HTMLElement>(".file-inline").forEach((box) => {
+      fillPreview(box.dataset.kind!, box.dataset.url!, box);
     });
 
     document.getElementById("file-modal-close")!.addEventListener("click", closeModal);
@@ -225,13 +228,44 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
     font-size: 13px;
     color: var(--muted);
   }
+  .file-item {
+    padding: 8px 0 0;
+    margin-top: 8px;
+    border-top: 1px dashed var(--border);
+  }
   .file-row {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 8px 0 0;
-    margin-top: 8px;
-    border-top: 1px dashed var(--border);
+  }
+  /* 内嵌预览：图片 / PDF / 文本直接显示 */
+  .file-inline {
+    margin-top: 10px;
+  }
+  .file-inline img {
+    display: block;
+    max-width: 100%;
+    max-height: 380px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    cursor: zoom-in;
+    margin: 0 auto;
+  }
+  .file-inline iframe {
+    display: block;
+    width: 100%;
+    height: 520px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+  }
+  .file-inline .file-text {
+    max-height: 460px;
+    overflow: auto;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px 20px;
   }
   .file-badge {
     flex: none;
