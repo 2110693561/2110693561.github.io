@@ -193,7 +193,145 @@
         border-color: #b9bed0;
         background: #f6f7fb;
       }
+
+      /* ---------- 列表条目去框（不再依赖具体类名，容器一律无边框） ---------- */
+      #nc-root [class*="entry" i]:not(input):not(textarea):not(label):not(select):not(button) {
+        border: none !important;
+        box-shadow: none !important;
+      }
+
+      /* ---------- 列表快捷开关（隐藏 / 加密 / 草稿） ---------- */
+      #nc-root .qa-group {
+        position: absolute;
+        right: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: inline-flex;
+        gap: 6px;
+        z-index: 5;
+      }
+      #nc-root .qa-btn {
+        padding: 2px 10px;
+        font-size: 12px;
+        line-height: 1.6;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--muted) !important;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      #nc-root .qa-btn:hover {
+        border-color: #b9c0cf;
+        color: var(--text) !important;
+      }
+      #nc-root .qa-btn.on {
+        background: var(--accent-soft);
+        border-color: #9aa3b8;
+        color: var(--text) !important;
+        font-weight: 600;
+      }
+      #nc-root .qa-btn.busy {
+        opacity: 0.45;
+        pointer-events: none;
+      }
+      #nc-root .qa-toast {
+        position: fixed;
+        left: 50%;
+        bottom: 30px;
+        transform: translateX(-50%);
+        background: var(--text);
+        color: var(--bg);
+        padding: 8px 18px;
+        border-radius: 999px;
+        font-size: 13px;
+        z-index: 99999;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        pointer-events: none;
+      }
+      #nc-root .qa-toast.show {
+        opacity: 1;
+      }
+
+      /* ---------- 夜间模式：与前台 data-theme="dark" 同一套配色 ---------- */
+      html[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #0e1117;
+        --panel: #161b24;
+        --border: #262d3d;
+        --text: #e6ebf4;
+        --muted: #8b96a8;
+        --accent: #3a4356;
+        --accent-hover: #46516a;
+        --accent-soft: #232b3a;
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+        --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+      }
+      /* Decap 自带样式会覆盖背景，这里强制压回夜色 */
+      html[data-theme="dark"] body,
+      html[data-theme="dark"] #nc-root,
+      html[data-theme="dark"] #nc-root > div {
+        background: var(--bg) !important;
+        color: var(--text);
+      }
+      html[data-theme="dark"] #nc-root [class*="appBar" i],
+      html[data-theme="dark"] #nc-root [class*="sidebar" i] {
+        background: var(--panel) !important;
+      }
+      html[data-theme="dark"] #nc-root input,
+      html[data-theme="dark"] #nc-root textarea,
+      html[data-theme="dark"] #nc-root select {
+        background: #1a212e;
+        color: var(--text);
+        border-color: #303a4d;
+      }
+      html[data-theme="dark"] #nc-root [class*="sidebar" i] [class*="link" i]:hover {
+        background: #1a212e;
+      }
+      html[data-theme="dark"] #nc-root [class*="sidebar" i] [class*="active" i] {
+        background: #232b3a;
+        color: var(--text) !important;
+      }
+      html[data-theme="dark"] #back-to-blog {
+        background: #232b3a;
+        color: var(--text) !important;
+      }
+      html[data-theme="dark"] #back-to-blog:hover {
+        background: #2b3450;
+      }
+      html[data-theme="dark"] #save-draft-btn {
+        background: #1a212e;
+        color: var(--text) !important;
+        border-color: #303a4d;
+      }
+      html[data-theme="dark"] #nc-root .qa-btn {
+        background: #1a212e;
+      }
+      html[data-theme="dark"] #nc-root .qa-btn.on {
+        background: #2b3450;
+      }
     </style>
+    <script>
+      // 与前台共用 localStorage["theme"]：前台切夜间，后台自动跟随
+      (function () {
+        function applyTheme() {
+          var saved = null;
+          try {
+            saved = localStorage.getItem("theme");
+          } catch (e) {}
+          var dark = saved
+            ? saved === "dark"
+            : window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+        }
+        applyTheme();
+        window.addEventListener("storage", function (e) {
+          if (!e || e.key === "theme") applyTheme();
+        });
+      })();
+    </script>
   </head>
   <body>
     <!-- Decap CMS：文章 / 随手记 / 批注 / 项目 的网页管理后台 -->
@@ -347,6 +485,235 @@
         function start() {
           if (document.body) {
             mo.observe(document.body, { childList: true, subtree: true });
+            ensure();
+          } else {
+            setTimeout(start, 60);
+          }
+        }
+        start();
+      })();
+
+      // 列表快捷开关：在文章/随手记列表直接切换 隐藏 / 加密 / 草稿
+      // 原理与批注保存一致：读取 Decap 登录令牌，通过 GitHub Contents API 修改 frontmatter 后提交
+      (function () {
+        var GH = "https://api.github.com";
+        var REPO = "2110693561/2110693561.github.io";
+        var BRANCH = "main";
+        var LABELS = { blog: "文章", notes: "随手记" };
+        var cache = {}; // key: col/slug -> { sha, text, state }
+
+        function token() {
+          var keys = ["decap-cms-user", "netlify-cms-user"];
+          for (var i = 0; i < keys.length; i++) {
+            try {
+              var raw = localStorage.getItem(keys[i]);
+              if (!raw) continue;
+              var u = JSON.parse(raw);
+              if (u && typeof u.token === "string" && u.token) return u.token;
+            } catch (e) {}
+          }
+          return null;
+        }
+        function gh(t) {
+          return { Authorization: "Bearer " + t, Accept: "application/vnd.github+json" };
+        }
+        function b64(s) {
+          return btoa(String.fromCharCode.apply(null, new TextEncoder().encode(s)));
+        }
+        function unb64(b) {
+          return new TextDecoder().decode(
+            Uint8Array.from(atob(b.replace(/\s+/g, "")), function (c) {
+              return c.charCodeAt(0);
+            })
+          );
+        }
+        function toast(msg) {
+          var el = document.querySelector("#nc-root .qa-toast");
+          if (!el) {
+            el = document.createElement("div");
+            el.className = "qa-toast";
+            document.getElementById("nc-root").appendChild(el);
+          }
+          el.textContent = msg;
+          el.classList.add("show");
+          clearTimeout(el._t);
+          el._t = setTimeout(function () {
+            el.classList.remove("show");
+          }, 2200);
+        }
+        function collection() {
+          var m = location.hash.match(/^#\/collections\/(blog|notes)\/?$/);
+          return m ? m[1] : null;
+        }
+        function parseState(fm) {
+          function val(key) {
+            var m = fm.match(new RegExp("^" + key + "\\s*:\\s*(.*)$", "m"));
+            return m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
+          }
+          return { draft: val("draft") === "true", hidden: val("hidden") === "true", password: val("password") };
+        }
+        function setKey(fm, key, value) {
+          var re = new RegExp("^" + key + "\\s*:\\s*.*$", "m");
+          var has = re.test(fm);
+          if (value === null) return has ? fm.replace(re, "").replace(/\n{2,}/g, "\n") : fm;
+          var line = key + ": " + value;
+          if (has) return fm.replace(re, line);
+          return fm.replace(/\s*$/, "\n") + line + "\n";
+        }
+        async function load(col, slug) {
+          var t = token();
+          if (!t) return null;
+          var exts = ["md", "mdx"];
+          for (var i = 0; i < exts.length; i++) {
+            var path = "src/content/" + col + "/" + slug + "." + exts[i];
+            var res = await fetch(GH + "/repos/" + REPO + "/contents/" + path + "?ref=" + BRANCH, {
+              headers: gh(t),
+            });
+            if (res.status === 404) continue;
+            if (!res.ok) throw new Error("GitHub " + res.status);
+            var json = await res.json();
+            var text = json.encoding === "base64" ? unb64(json.content) : json.content;
+            var m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+            var entry = { sha: json.sha, path: path, text: text, fm: m ? m[1] : "", state: m ? parseState(m[1]) : { draft: false, hidden: false, password: "" } };
+            cache[col + "/" + slug] = entry;
+            return entry;
+          }
+          return null;
+        }
+        async function save(col, slug, patch, actionName) {
+          var t = token();
+          if (!t) throw new Error("登录已过期，请重新登录后台");
+          var entry = cache[col + "/" + slug] || (await load(col, slug));
+          if (!entry) throw new Error("找不到条目文件");
+          var fm = entry.fm;
+          if ("draft" in patch) fm = setKey(fm, "draft", String(patch.draft));
+          if ("hidden" in patch) fm = setKey(fm, "hidden", String(patch.hidden));
+          if ("password" in patch) fm = setKey(fm, "password", patch.password ? JSON.stringify(patch.password) : null);
+          var content = entry.text.replace(/^---\r?\n[\s\S]*?\r?\n---/, "---\n" + fm + "\n---");
+          var res = await fetch(GH + "/repos/" + REPO + "/contents/" + entry.path, {
+            method: "PUT",
+            headers: gh(t),
+            body: JSON.stringify({
+              message: actionName + "：" + slug,
+              content: b64(content),
+              sha: entry.sha,
+              branch: BRANCH,
+            }),
+          });
+          if (res.status === 401) throw new Error("登录已过期，请重新登录后台");
+          if (!res.ok) throw new Error("GitHub " + res.status);
+          entry.text = content;
+          entry.fm = fm;
+          entry.state = parseState(fm);
+          var meta = await fetch(GH + "/repos/" + REPO + "/contents/" + entry.path + "?ref=" + BRANCH, { headers: gh(t) });
+          if (meta.ok) entry.sha = (await meta.json()).sha;
+        }
+
+        function mark(btn, on) {
+          btn.classList.toggle("on", !!on);
+        }
+        function refreshRow(group, state) {
+          mark(group.querySelector('[data-k="draft"]'), state.draft);
+          mark(group.querySelector('[data-k="hidden"]'), state.hidden);
+          mark(group.querySelector('[data-k="password"]'), state.password);
+        }
+        function buildGroup(col, slug) {
+          var group = document.createElement("span");
+          group.className = "qa-group";
+          var defs = [
+            { k: "draft", label: "草稿", title: "转草稿：保存但不在网站上发布" },
+            { k: "hidden", label: "隐藏", title: "隐藏：列表不显示，直接链接仍可访问" },
+            { k: "password", label: "加密", title: "加密：访客需输入密码才能查看" },
+          ];
+          defs.forEach(function (d) {
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "qa-btn";
+            b.dataset.k = d.k;
+            b.textContent = d.label;
+            b.title = d.title;
+            b.addEventListener("click", async function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              var col = collection();
+              if (!col) return;
+              try {
+                b.classList.add("busy");
+                var entry = cache[col + "/" + slug] || (await load(col, slug));
+                if (!entry) throw new Error("找不到条目文件");
+                if (d.k === "password") {
+                  if (entry.state.password) {
+                    if (!confirm("该内容已加密，确定取消加密？")) {
+                      b.classList.remove("busy");
+                      return;
+                    }
+                    await save(col, slug, { password: null }, "取消加密");
+                    toast("已取消加密，构建后生效");
+                  } else {
+                    var pwd = prompt("输入查看密码（留空取消）：");
+                    b.classList.remove("busy");
+                    if (!pwd) return;
+                    await save(col, slug, { password: pwd }, "加密");
+                    toast("已加密，构建后生效");
+                  }
+                } else {
+                  var next = !entry.state[d.k];
+                  var name = d.k === "draft" ? (next ? "转草稿" : "转为发布") : next ? "隐藏" : "取消隐藏";
+                  await save(col, slug, { [d.k]: next }, name);
+                  toast(name + "，构建后生效");
+                }
+                refreshRow(group, entry.state);
+                b.classList.remove("busy");
+              } catch (err) {
+                b.classList.remove("busy");
+                alert("操作失败：" + (err instanceof Error ? err.message : err));
+              }
+            });
+            group.appendChild(b);
+          });
+          return group;
+        }
+
+        async function ensure() {
+          var col = collection();
+          if (!col) return;
+          var rows = document.querySelectorAll('#nc-root a[href*="/entries/"]');
+          Array.prototype.forEach.call(rows, function (a) {
+            var slug = decodeURIComponent((a.getAttribute("href") || "").split("/entries/")[1] || "");
+            if (!slug) return;
+            var existing = a.querySelector(":scope > .qa-group");
+            if (existing) return;
+            if (getComputedStyle(a).position === "static") a.style.position = "relative";
+            var group = buildGroup(col, slug);
+            a.appendChild(group);
+            var key = col + "/" + slug;
+            if (cache[key]) {
+              refreshRow(group, cache[key].state);
+            } else {
+              // 加载失败也保留按钮（本地代理模式没有 GitHub 令牌，点击时会提示）
+              load(col, slug)
+                .then(function (entry) {
+                  if (entry && group.isConnected) refreshRow(group, entry.state);
+                })
+                .catch(function () {});
+            }
+          });
+        }
+
+        var pending = null;
+        var mo = new MutationObserver(function () {
+          if (pending) return;
+          pending = setTimeout(function () {
+            pending = null;
+            ensure();
+          }, 300);
+        });
+        function start() {
+          if (document.body) {
+            mo.observe(document.body, { childList: true, subtree: true });
+            window.addEventListener("hashchange", function () {
+              setTimeout(ensure, 400);
+            });
             ensure();
           } else {
             setTimeout(start, 60);

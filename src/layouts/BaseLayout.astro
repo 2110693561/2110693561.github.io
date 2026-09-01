@@ -20,6 +20,10 @@ const navItems = NAV.map((n) => ({
   href: base === "/" ? n.url : base.replace(/\/$/, "") + n.url,
 }));
 const isActive = (href: string) => (href.replace(/\/$/, "") || "/") === currentPath;
+// CMS 图片控件可能存成 "public/images/xx.jpg"，统一规范为 "/images/xx.jpg"
+const assetPath = (p: string) => p.replace(/^\/?public\//, "/");
+const logoSrc = SITE.logo ? assetPath(SITE.logo) : "";
+const faviconSrc = assetPath(SITE.favicon);
 ---
 
 <!doctype html>
@@ -34,8 +38,8 @@ const isActive = (href: string) => (href.replace(/\/$/, "") || "/") === currentP
     <link rel="canonical" href={canonical} />
     <link
       rel="icon"
-      type={SITE.favicon.endsWith(".png") ? "image/png" : SITE.favicon.endsWith(".ico") ? "image/x-icon" : SITE.favicon.endsWith(".svg") ? "image/svg+xml" : undefined}
-      href={SITE.favicon.startsWith("http") ? SITE.favicon : `${base}${SITE.favicon.replace(/^\//, "")}`}
+      type={faviconSrc.endsWith(".png") ? "image/png" : faviconSrc.endsWith(".ico") ? "image/x-icon" : faviconSrc.endsWith(".svg") ? "image/svg+xml" : undefined}
+      href={faviconSrc.startsWith("http") ? faviconSrc : `${base}${faviconSrc.replace(/^\//, "")}`}
     />
     <link rel="alternate" type="application/rss+xml" title={SITE.name} href={`${base}rss.xml`} />
     <link rel="sitemap" href={`${base}sitemap-index.xml`} />
@@ -60,9 +64,9 @@ const isActive = (href: string) => (href.replace(/\/$/, "") || "/") === currentP
       <div class="wrap nav">
         <a class="brand" href={base}>
           {
-            SITE.logo &&
-              (/^https?:\/\/|^\/.+/i.test(SITE.logo) ? (
-                <img class="brand-logo" src={SITE.logo} alt="" />
+            logoSrc &&
+              (/^https?:\/\/|^\//.test(logoSrc) ? (
+                <img class="brand-logo" src={logoSrc} alt="" />
               ) : (
                 <span class="brand-mark">{SITE.logo}</span>
               ))
