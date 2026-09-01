@@ -12,7 +12,7 @@ tags: [Astro, Decap CMS, GitHub Pages, Cloudflare, 踩坑]
 
 先看现在这个站已经有什么：
 
-- **前台**：文章（分类/标签/归档）、随手记时间线、资料预览页（预览懒加载）、项目展示、全文搜索、RSS、明暗主题、giscus 评论、全站折叠式浏览（首页三个区块 + 每条内容可展开）
+- **前台**：文章（分类/标签/归档）、随手记时间线、资料预览页（预览懒加载）、项目展示、全文搜索、RSS、明暗主题、giscus 评论、全站折叠式浏览（首页三个区块 + 每条内容可展开）、移动端适配
 - **后台**（`/admin/`）：完全在网页上写作和管理，不需要本地环境，不需要手动 git
 - **内容管理**：草稿、隐藏、密码加密、批量上传、整文件夹上传、本地笔记导入、划段批注
 - **托管成本**：0 元（GitHub Pages + Cloudflare 免费额度）
@@ -291,6 +291,36 @@ var MarkdownPreview = createClass({
 CMS.registerPreviewTemplate("blog", MarkdownPreview);
 CMS.registerPreviewTemplate("notes", MarkdownPreview);
 ```
+
+### 8. 移动端适配
+
+整站响应式用 **900px / 640px 双断点**（平板收间距、手机改布局），几个关键决策：
+
+**导航用横向滑动而不是汉堡菜单**。7 个导航项在 360px 屏上放不下，抽屉菜单要维护开合状态，而横向滑动零 JS、可发现性好，是成本最低的可靠方案：
+
+```css
+@media (max-width: 640px) {
+  .nav {
+    overflow-x: auto;              /* 放不下就横向滑 */
+    scrollbar-width: none;         /* 隐藏滚动条 */
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .brand { flex: none; }           /* 站名固定，菜单区滑动 */
+  .navlink { white-space: nowrap; }
+}
+```
+
+其他适配点：
+
+- **宽表格**改 `display: block; overflow-x: auto`，窄屏横向滚动不撑破布局（正文和随手记都处理）
+- **锚点防遮挡**：sticky 顶栏 60px 高，正文标题加 `scroll-margin-top: 76px`，跳转锚点不再被压在顶栏下面
+- **触摸目标**：批注浮动按钮在手机上加大到 `padding: 8px 16px`，手指能准确点中
+- **iOS 细节**：`-webkit-tap-highlight-color: transparent` 去掉点按灰色高亮块；输入框字号保持 16px 防 iOS 聚焦时自动放大页面
+- **资料页 PDF 预览**高度从固定 520px 改 `66vh`，跟随手机屏幕；预览弹窗边距收紧
+- **内容优先**：正文 16→15px、标题降级、页头/区块间距收紧，首屏能多看几行内容
+- **目录侧栏（TOC）**在窄屏直接隐藏（`min-width: 1080px` 才显示），单列阅读不受干扰
+- 资料预览弹窗、图片灯箱本身就用的 `max-width/max-height` 自适应，无需额外处理
 
 ## 五、踩坑实录：问题与解决
 

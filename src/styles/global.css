@@ -41,6 +41,7 @@ body {
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
   line-height: 1.75;
   transition: background 0.25s ease, color 0.25s ease;
+  -webkit-tap-highlight-color: transparent; /* 移动端点按不出现灰色高亮块 */
 }
 a { color: inherit; text-decoration: none; }
 a:hover { color: var(--accent); }
@@ -280,6 +281,8 @@ a.card:hover h3 { color: var(--accent); }
 .prose h2 { margin: 1.8em 0 0.6em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); font-size: 24px; }
 .prose h3 { margin: 1.6em 0 0.5em; font-size: 20px; }
 .prose h4 { margin: 1.4em 0 0.4em; font-size: 17px; }
+/* 锚点跳转时避开 sticky 顶栏遮挡 */
+.prose h2, .prose h3, .prose h4 { scroll-margin-top: 76px; }
 .prose p { margin: 0.8em 0; }
 .prose a { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 3px; }
 .prose code {
@@ -311,6 +314,8 @@ a.card:hover h3 { color: var(--accent); }
 .prose th { background: var(--bg-soft); }
 .prose img { display: block; margin: 1em auto; }
 .prose hr { border: none; border-top: 1px dashed var(--border); margin: 2em 0; }
+/* 宽表格在窄屏横向滚动，不撑破布局 */
+.prose table, .note-content table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 /* ================= 归档列表 ================= */
 .archive-year { font-size: 22px; font-weight: 700; margin: 34px 0 10px; color: var(--accent-strong); }
@@ -551,8 +556,62 @@ a.card:hover h3 { color: var(--accent); }
 .notfound p { color: var(--muted); }
 
 /* ================= 响应式微调 ================= */
+/* 平板 / 窄窗口：收紧纵向间距 */
+@media (max-width: 900px) {
+  .hero { padding: 48px 0 26px; }
+  .hero .sub { font-size: 16px; }
+  .section-head { margin: 34px 0 14px; }
+  .section-head h2 { font-size: 20px; }
+  .page-head { padding-top: 32px; }
+  .post-header { padding-top: 30px; }
+}
+
+/* 手机：导航横滑、字号排版收紧、触摸目标加大 */
 @media (max-width: 640px) {
-  .nav { gap: 0; }
-  .navlink { padding: 6px 8px; font-size: 14px; }
-  .hero { padding: 40px 0 24px; }
+  /* 导航：放不下就横向滑动，不换行不挤压；隐藏滚动条 */
+  .nav {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .brand { flex: none; }
+  .navlink { padding: 7px 10px; font-size: 14px; white-space: nowrap; }
+
+  /* 页面骨架间距 */
+  .hero { padding: 34px 0 20px; }
+  .hero .sub { font-size: 15.5px; }
+  .hero .btns .btn { padding: 9px 18px; }
+  .page-head { padding-top: 26px; }
+  .page-head h1 { font-size: 24px; }
+  .post-header { padding-top: 24px; }
+  .section-head { margin: 28px 0 12px; }
+
+  /* 正文排版 */
+  .prose { font-size: 15px; }
+  .prose h2 { font-size: 20px; scroll-margin-top: 70px; }
+  .prose h3 { font-size: 17.5px; }
+  .prose pre { padding: 12px 14px; border-radius: 10px; }
+  .prose pre code { font-size: 12.5px; }
+  .prose blockquote { padding: 3px 12px; }
+
+  /* 归档列表 */
+  .archive-list li { gap: 10px; }
+  .archive-list time { font-size: 12.5px; }
+
+  /* 随手记时间线 */
+  .timeline { padding-left: 22px; }
+  .note-item::before { left: -21px; }
+
+  /* 资料页：预览高度跟随视口，弹窗贴边 */
+  .file-inline iframe { height: 66vh; }
+  .file-modal { padding: 10px; }
+  .file-row { gap: 8px; }
+
+  /* 批注按钮：加大触摸目标，方便手指点按 */
+  .anno-float { padding: 8px 16px; font-size: 13.5px; }
+
+  /* 页脚纵向堆叠 */
+  .site-footer { margin-top: 44px; }
+  .site-footer .inner { flex-direction: column; align-items: flex-start; gap: 8px; }
 }
