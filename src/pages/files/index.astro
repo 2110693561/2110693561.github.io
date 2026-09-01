@@ -132,6 +132,7 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
       titleEl.textContent = title;
       openEl.href = url;
       modal.hidden = false;
+      body.classList.remove("has-image");
       document.documentElement.style.overflow = "hidden";
       (document.getElementById("file-modal-close") as HTMLButtonElement).focus();
     }
@@ -154,6 +155,7 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
         img.addEventListener("click", () => {
           openModal("查看图片", url);
           body.innerHTML = "";
+          body.classList.add("has-image");
           const big = document.createElement("img");
           big.src = url;
           big.alt = "";
@@ -372,12 +374,21 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
     overflow: auto;
     background: var(--bg);
   }
-  .file-modal-body img {
-    display: block;
-    margin: 0 auto;
-    /* 原图大小显示，超出部分滚动查看 */
-    max-width: none;
-    max-height: none;
+  /* 图片模式：图片自适应弹窗大小，不溢出 */
+  .file-modal-body.has-image {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+  }
+  .file-modal-body.has-image img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    margin: 0;
+    border-radius: 6px;
   }
   .file-modal-body iframe {
     width: 100%;
