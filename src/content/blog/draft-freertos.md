@@ -1,10 +1,13 @@
 ---
 title: 草稿：ESP32 FreeRTOS 任务调度笔记
-description: 还没写完的草稿，draft 为 true 时不会出现在网站上。
 date: 2026-08-25
-draft: true
+description: 还没写完的草稿，draft 为 true 时不会出现在网站上。
 category: 嵌入式
-tags: [ESP32, FreeRTOS]
+tags:
+  - ESP32
+  - FreeRTOS
+draft: true
+password: demo1234
 ---
 
 这篇还是草稿，用来验证 draft 功能：设置了 `draft: true` 的文章不会出现在列表、归档和搜索里。
