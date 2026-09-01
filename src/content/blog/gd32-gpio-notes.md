@@ -1,9 +1,13 @@
 ---
 title: GD32 GPIO 外设入门笔记
-description: GD32 GPIO 的基本概念、配置流程和点灯代码模板，附常见的坑位记录。
 date: 2026-08-28
+description: GD32 GPIO 的基本概念、配置流程和点灯代码模板，附常见的坑位记录。
 category: 嵌入式
-tags: [GD32, GPIO, 外设]
+tags:
+  - GD32
+  - GPIO
+  - 外设
+draft: true
 ---
 
 记录 GD32 GPIO 的学习笔记，以 GD32F4xx 系列为例。
