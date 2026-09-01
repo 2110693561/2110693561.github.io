@@ -1408,7 +1408,10 @@
                   function (m, pre, path, post) {
                     var bn = path.split("/").pop().split("?")[0];
                     var hit = imgMap[bn.toLowerCase()];
-                    if (!hit) return m;
+                    if (!hit) {
+                      // 没有携带该图片：替换为占位文本，避免构建时找不到文件报错
+                      return "*（图片待补充：" + bn + "）*";
+                    }
                     var newName = safeName(bn.replace(IMG, "")) + (bn.match(IMG) || [""])[0].toLowerCase();
                     var url = "/images/notes/" + safeName(base) + "/" + newName;
                     uploaded[bn.toLowerCase()] = { file: hit, name: newName };
