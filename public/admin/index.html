@@ -195,6 +195,34 @@
         color: var(--text) !important;
       }
       /* 随手记列表页「导入笔记」：紧跟「+ 随手记」右侧，同尺寸浅色样式 */
+      /* 编辑器内图片：缩略图放大显示，点击看大图 */
+      #nc-root .cm-content img,
+      #nc-root [class*="markdown" i] img,
+      #nc-root [class*="editable" i] img {
+        max-width: min(100%, 420px);
+        height: auto;
+        border-radius: 8px;
+        cursor: zoom-in;
+      }
+      #qa-lightbox {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        background: rgba(10, 12, 20, 0.85);
+        display: none;
+        align-items: center;
+        justify-content: center;
+      }
+      #qa-lightbox.on {
+        display: flex;
+      }
+      #qa-lightbox img {
+        max-width: 94vw;
+        max-height: 92vh;
+        border-radius: 10px;
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+      }
+
       #nc-root .qa-import-pill {
         display: inline-flex !important;
         align-items: center;
@@ -1537,6 +1565,44 @@
             alert("导入失败：" + ((err && err.message) || err));
           }
         }
+
+        // 编辑器内图片点击放大（浅灯箱）
+        (function () {
+          var lb = document.createElement("div");
+          lb.id = "qa-lightbox";
+          lb.innerHTML = '<img alt="" />';
+          lb.addEventListener("click", function () {
+            lb.classList.remove("on");
+          });
+          document.addEventListener("keydown", function (e) {
+            if (e.key === "Escape") lb.classList.remove("on");
+          });
+          function mount() {
+            document.body.appendChild(lb);
+          }
+          if (document.body) mount();
+          else document.addEventListener("DOMContentLoaded", mount);
+          document.addEventListener(
+            "click",
+            function (e) {
+              var t = e.target;
+              var img = t && t.tagName === "IMG" ? t : null;
+              if (!img || !img.closest("#nc-root")) return;
+              if (img.closest("#qa-lightbox")) return;
+              if (
+                !img.closest(
+                  '[class*="markdown" i], .cm-editor, [class*="editable" i], [class*="editor" i]'
+                )
+              )
+                return;
+              e.preventDefault();
+              e.stopPropagation();
+              lb.querySelector("img").src = img.currentSrc || img.src;
+              lb.classList.add("on");
+            },
+            true
+          );
+        })();
 
         function injectImport() {
           if (collection() !== "notes") {
