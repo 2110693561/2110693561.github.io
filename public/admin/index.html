@@ -496,6 +496,55 @@
     <!-- Decap CMS：文章 / 随手记 / 批注 / 项目 的网页管理后台 -->
     <script src="https://cdn.jsdelivr.net/npm/decap-cms@3/dist/decap-cms.js"></script>
     <script>
+      // 预览面板：像原生 Markdown 一样显示（排版与博客前台 .prose 完全一致）
+      (function () {
+        function registerPreviews() {
+          if (!window.CMS || typeof window.CMS.registerPreviewTemplate !== "function") return false;
+          if (typeof createClass !== "function" || typeof h !== "function") return false;
+          if (window.__qaPreviewRegistered) return true;
+          window.__qaPreviewRegistered = true;
+          CMS.registerPreviewStyle("/admin/preview.css");
+          // 用 Decap 内置 Markdown 渲染 body，套上前台同款 .prose 容器
+          var MarkdownPreview = createClass({
+            render: function () {
+              return h("div", { className: "prose" }, this.props.widgetFor("body"));
+            }
+          });
+          CMS.registerPreviewTemplate("blog", MarkdownPreview);
+          CMS.registerPreviewTemplate("notes", MarkdownPreview);
+          return true;
+        }
+        if (!registerPreviews()) {
+          var regTimer = setInterval(function () {
+            if (registerPreviews()) clearInterval(regTimer);
+          }, 100);
+        }
+
+        // 把后台明暗主题同步到预览 iframe（深色模式下预览不再白底刺眼）
+        function syncPreviewTheme() {
+          var theme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+          Array.prototype.forEach.call(document.querySelectorAll("iframe"), function (f) {
+            try {
+              if (f.contentDocument && f.contentDocument.documentElement)
+                f.contentDocument.documentElement.dataset.theme = theme;
+            } catch (e) {}
+          });
+        }
+        syncPreviewTheme();
+        new MutationObserver(syncPreviewTheme).observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ["data-theme"],
+        });
+        var themePend = null;
+        new MutationObserver(function () {
+          if (themePend) return;
+          themePend = setTimeout(function () {
+            themePend = null;
+            syncPreviewTheme();
+          }, 150);
+        }).observe(document.body, { childList: true, subtree: true });
+      })();
+
       // 侧边栏增强：顶部注入「← 回到主页」入口，并隐藏左上角「集合」小标题
       (function () {
         var SITE_URL = "https://2110693561.github.io/";
