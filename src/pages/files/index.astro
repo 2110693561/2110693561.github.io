@@ -244,8 +244,10 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
   }
   .file-inline img {
     display: block;
+    height: 260px;
+    width: auto;
     max-width: 100%;
-    max-height: 380px;
+    object-fit: cover;
     border-radius: 10px;
     border: 1px solid var(--border);
     cursor: zoom-in;
