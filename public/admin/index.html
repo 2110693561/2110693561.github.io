@@ -1179,6 +1179,13 @@
           }
           if (assetsTab) assetsTab.style.display = "none";
           if (uploadTab && uploadTab.offsetParent !== null) uploadTab.click();
+          // 媒体库的上传选择框原生单选，这里强制允许多选（Ctrl/Shift）
+          var inputs = document.querySelectorAll('input[type="file"]');
+          for (var j = 0; j < inputs.length; j++) {
+            if (inputs[j].id !== "qa-bulk-upload" && !inputs[j].multiple) {
+              inputs[j].multiple = true;
+            }
+          }
         }
 
         var pending = null;
