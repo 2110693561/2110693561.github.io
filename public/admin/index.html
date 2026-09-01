@@ -235,6 +235,13 @@
         opacity: 0.45;
         pointer-events: none;
       }
+      #nc-root .qa-btn.delete {
+        color: #dc2626 !important;
+      }
+      #nc-root .qa-btn.delete:hover {
+        border-color: #dc2626;
+        background: #fef2f2;
+      }
       #nc-root .qa-toast {
         position: fixed;
         left: 50%;
@@ -526,7 +533,21 @@
           return null;
         }
         function gh(t) {
-          return { Authorization: "Bearer " + t, Accept: "application/vnd.github+json" };
+          return {
+            Authorization: "Bearer " + t,
+            Accept: "application/vnd.github+json",
+            "Content-Type": "application/json",
+          };
+        }
+        // 把 GitHub 的原始错误带出来，方便定位问题
+        async function ghError(res) {
+          if (res.status === 401) return new Error("登录令牌无效或已过期，请退出后台重新登录");
+          var extra = "";
+          try {
+            var j = await res.json();
+            if (j && j.message) extra = "：" + j.message;
+          } catch (e) {}
+          return new Error("GitHub " + res.status + extra);
         }
         function b64(s) {
           return btoa(String.fromCharCode.apply(null, new TextEncoder().encode(s)));
@@ -561,7 +582,7 @@
             var m = fm.match(new RegExp("^" + key + "\\s*:\\s*(.*)$", "m"));
             return m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
           }
-          return { draft: val("draft") === "true", hidden: val("hidden") === "true", password: val("password") };
+          return { draft: val("draft") === "true", hidden: val("hidden") === "true", password: val("password"), title: val("title") };
         }
         function setKey(fm, key, value) {
           var re = new RegExp("^" + key + "\\s*:\\s*.*$", "m");
@@ -573,7 +594,7 @@
         }
         async function load(col, slug) {
           var t = token();
-          if (!t) return null;
+          if (!t) throw new Error("未检测到登录令牌，请退出后台重新登录");
           var exts = ["md", "mdx"];
           for (var i = 0; i < exts.length; i++) {
             var path = "src/content/" + col + "/" + slug + "." + exts[i];
@@ -581,7 +602,7 @@
               headers: gh(t),
             });
             if (res.status === 404) continue;
-            if (!res.ok) throw new Error("GitHub " + res.status);
+            if (!res.ok) throw await ghError(res);
             var json = await res.json();
             var text = json.encoding === "base64" ? unb64(json.content) : json.content;
             var m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -591,33 +612,73 @@
           }
           return null;
         }
-        async function save(col, slug, patch, actionName) {
+        async function put(col, entry, fm, actionName) {
           var t = token();
-          if (!t) throw new Error("登录已过期，请重新登录后台");
-          var entry = cache[col + "/" + slug] || (await load(col, slug));
-          if (!entry) throw new Error("找不到条目文件");
-          var fm = entry.fm;
-          if ("draft" in patch) fm = setKey(fm, "draft", String(patch.draft));
-          if ("hidden" in patch) fm = setKey(fm, "hidden", String(patch.hidden));
-          if ("password" in patch) fm = setKey(fm, "password", patch.password ? JSON.stringify(patch.password) : null);
           var content = entry.text.replace(/^---\r?\n[\s\S]*?\r?\n---/, "---\n" + fm + "\n---");
           var res = await fetch(GH + "/repos/" + REPO + "/contents/" + entry.path, {
             method: "PUT",
             headers: gh(t),
             body: JSON.stringify({
-              message: actionName + "：" + slug,
+              message: actionName + "：" + slugOf(entry.path),
               content: b64(content),
               sha: entry.sha,
               branch: BRANCH,
             }),
           });
-          if (res.status === 401) throw new Error("登录已过期，请重新登录后台");
-          if (!res.ok) throw new Error("GitHub " + res.status);
+          if (!res.ok) throw await ghError(res);
           entry.text = content;
           entry.fm = fm;
           entry.state = parseState(fm);
           var meta = await fetch(GH + "/repos/" + REPO + "/contents/" + entry.path + "?ref=" + BRANCH, { headers: gh(t) });
           if (meta.ok) entry.sha = (await meta.json()).sha;
+        }
+        function slugOf(path) {
+          return path.split("/").pop().replace(/\.(md|mdx)$/, "");
+        }
+        async function save(col, slug, patch, actionName) {
+          var t = token();
+          if (!t) throw new Error("未检测到登录令牌，请退出后台重新登录");
+          var entry = cache[col + "/" + slug] || (await load(col, slug));
+          if (!entry) throw new Error("找不到条目文件（" + col + "/" + slug + "）");
+          var fm = entry.fm;
+          if ("draft" in patch) fm = setKey(fm, "draft", String(patch.draft));
+          if ("hidden" in patch) fm = setKey(fm, "hidden", String(patch.hidden));
+          if ("password" in patch) fm = setKey(fm, "password", patch.password ? JSON.stringify(patch.password) : null);
+          try {
+            await put(col, entry, fm, actionName);
+          } catch (err) {
+            // sha 过期（他处已更新）时刷新一次再试
+            if (/409|404/.test(err.message)) {
+              delete cache[col + "/" + slug];
+              var fresh = await load(col, slug);
+              if (fresh) {
+                var fm2 = fresh.fm;
+                if ("draft" in patch) fm2 = setKey(fm2, "draft", String(patch.draft));
+                if ("hidden" in patch) fm2 = setKey(fm2, "hidden", String(patch.hidden));
+                if ("password" in patch) fm2 = setKey(fm2, "password", patch.password ? JSON.stringify(patch.password) : null);
+                await put(col, fresh, fm2, actionName);
+                return;
+              }
+            }
+            throw err;
+          }
+        }
+        async function remove(col, slug) {
+          var t = token();
+          if (!t) throw new Error("未检测到登录令牌，请退出后台重新登录");
+          var entry = cache[col + "/" + slug] || (await load(col, slug));
+          if (!entry) throw new Error("找不到条目文件（" + col + "/" + slug + "）");
+          var res = await fetch(GH + "/repos/" + REPO + "/contents/" + entry.path, {
+            method: "DELETE",
+            headers: gh(t),
+            body: JSON.stringify({
+              message: "删除" + (LABELS[col] || "内容") + "：" + slug,
+              sha: entry.sha,
+              branch: BRANCH,
+            }),
+          });
+          if (!res.ok) throw await ghError(res);
+          delete cache[col + "/" + slug];
         }
 
         function mark(btn, on) {
@@ -635,11 +696,12 @@
             { k: "draft", label: "草稿", title: "转草稿：保存但不在网站上发布" },
             { k: "hidden", label: "隐藏", title: "隐藏：列表不显示，直接链接仍可访问" },
             { k: "password", label: "加密", title: "加密：访客需输入密码才能查看" },
+            { k: "delete", label: "删除", title: "删除：从仓库删除这个文件，不可恢复" },
           ];
           defs.forEach(function (d) {
             var b = document.createElement("button");
             b.type = "button";
-            b.className = "qa-btn";
+            b.className = "qa-btn" + (d.k === "delete" ? " delete" : "");
             b.dataset.k = d.k;
             b.textContent = d.label;
             b.title = d.title;
@@ -651,7 +713,17 @@
               try {
                 b.classList.add("busy");
                 var entry = cache[col + "/" + slug] || (await load(col, slug));
-                if (!entry) throw new Error("找不到条目文件");
+                if (!entry) throw new Error("找不到条目文件（" + col + "/" + slug + "）");
+                if (d.k === "delete") {
+                  b.classList.remove("busy");
+                  if (!confirm("确定删除《" + (entry.state.title || slug) + "》？文件将从仓库删除，不可恢复。")) return;
+                  b.classList.add("busy");
+                  await remove(col, slug);
+                  var row = b.closest("a");
+                  if (row) row.remove();
+                  toast("已删除，构建后生效");
+                  return;
+                }
                 if (d.k === "password") {
                   if (entry.state.password) {
                     if (!confirm("该内容已加密，确定取消加密？")) {
