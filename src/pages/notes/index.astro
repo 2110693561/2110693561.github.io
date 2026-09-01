@@ -7,8 +7,8 @@ import { encryptForBrowser } from "../../utils/encrypt";
 
 const base = import.meta.env.BASE_URL;
 
-// 随手记：日期倒序；有密码的渲染后加密
-const notes = (await getCollection("notes")).sort(
+// 随手记：日期倒序（排除草稿和隐藏）；有密码的渲染后加密
+const notes = (await getCollection("notes", ({ data }) => !data.draft && !data.hidden)).sort(
   (a, b) => b.data.date.valueOf() - a.data.date.valueOf()
 );
 

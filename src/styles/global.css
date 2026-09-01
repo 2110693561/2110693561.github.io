@@ -150,6 +150,8 @@ h1, h2, h3, h4 { line-height: 1.3; }
 }
 a.card:hover { transform: translateY(-3px); border-color: var(--accent); color: inherit; }
 .card h3 { margin: 6px 0 8px; font-size: 17px; }
+.card h3 .card-link { color: inherit; text-decoration: none; }
+.card h3 .card-link:hover { color: var(--accent-strong); }
 a.card:hover h3 { color: var(--accent); }
 .card .desc {
   color: var(--muted);
@@ -395,10 +397,10 @@ a.card:hover h3 { color: var(--accent); }
 .anno-float:hover { background: var(--accent); color: #fff; }
 .annotation-card {
   margin: 10px 0;
-  padding: 10px 14px;
-  border-left: 3px solid var(--accent);
-  background: var(--accent-soft);
-  border-radius: 0 10px 10px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--accent);
+  background: transparent;
+  border-radius: 0;
   font-size: 14.5px;
 }
 .anno-quote { color: var(--muted); font-size: 13px; margin-bottom: 4px; }

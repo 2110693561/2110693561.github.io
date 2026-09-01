@@ -60,6 +60,7 @@ collections:
     view_filters:
       - { label: 已发布, field: draft, pattern: false }
       - { label: 草稿, field: draft, pattern: true }
+      - { label: 已隐藏, field: hidden, pattern: true }
       - { label: 已加密, field: password, pattern: ".+" }
     fields:
       - { name: title, label: 标题, widget: string }
@@ -67,7 +68,8 @@ collections:
       - { name: description, label: 摘要, widget: text, required: false, hint: 显示在列表卡片和搜索结果里 }
       - { name: category, label: 分类, widget: string, required: false, default: 未分类 }
       - { name: tags, label: 标签, widget: list, required: false, default: [] }
-      - { name: draft, label: 草稿（保存后不会发布）, widget: boolean, default: false, required: false }
+      - { name: draft, label: 草稿（不发布）, widget: boolean, default: false, required: false, hint: 打开后只在后台可见，网站和 RSS/搜索都不会出现 }
+      - { name: hidden, label: 隐藏（不在列表显示）, widget: boolean, default: false, required: false, hint: 打开后不出现在首页/文章列表/标签/分类/RSS/搜索，但知道链接的人仍可直接访问 }
       - name: password
         label: 查看密码
         widget: string
@@ -85,12 +87,16 @@ collections:
     editor:
       preview: false
     view_filters:
-      - { label: 公开, field: password, pattern: "^$" }
+      - { label: 已发布, field: draft, pattern: false }
+      - { label: 草稿, field: draft, pattern: true }
+      - { label: 已隐藏, field: hidden, pattern: true }
       - { label: 已加密, field: password, pattern: ".+" }
     fields:
       - { name: date, label: 日期, widget: datetime, format: "YYYY-MM-DDTHH:mm", date_format: "YYYY-MM-DD", time_format: "HH:mm" }
       - { name: title, label: 标题（可选）, widget: string, required: false }
       - { name: tags, label: 标签, widget: list, required: false, default: [] }
+      - { name: draft, label: 草稿（不发布）, widget: boolean, default: false, required: false, hint: 打开后只在后台可见 }
+      - { name: hidden, label: 隐藏（不在时间线显示）, widget: boolean, default: false, required: false }
       - name: password
         label: 查看密码
         widget: string
@@ -133,7 +139,11 @@ collections:
             fields:
               - { name: name, label: 名称, widget: string }
               - { name: description, label: 描述, widget: text }
-              - { name: url, label: 链接（可选）, widget: string, required: false }
-              - { name: repo, label: 仓库地址（可选）, widget: string, required: false }
+              - { name: url, label: 在线访问链接（可选）, widget: string, required: false }
+              - name: repo
+                label: GitHub 仓库（可选）
+                widget: string
+                required: false
+                hint: 填 owner/仓库名（如 2110693561/mynote）或完整链接，项目卡片会生成可点击的跳转链接
               - { name: tags, label: 标签, widget: list, required: false, default: [] }
               - { name: hidden, label: 隐藏（不在网站显示）, widget: boolean, default: false, required: false }

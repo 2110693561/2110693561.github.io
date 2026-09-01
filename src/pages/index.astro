@@ -10,8 +10,8 @@ import { SITE } from "../config";
 
 const posts = (await getSortedPosts()).slice(0, 6);
 
-// 随手记：取最新 4 条，有密码的加密
-const notes = (await getCollection("notes"))
+// 随手记：取最新 4 条（排除草稿和隐藏），有密码的加密
+const notes = (await getCollection("notes", ({ data }) => !data.draft && !data.hidden))
   .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf())
   .slice(0, 4);
 

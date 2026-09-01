@@ -2,9 +2,9 @@ import { getCollection, type CollectionEntry } from "astro:content";
 
 export type Post = CollectionEntry<"blog">;
 
-/** 按日期倒序获取所有已发布（非草稿）文章 */
+/** 按日期倒序获取所有已发布（非草稿、非隐藏）文章 */
 export async function getSortedPosts(): Promise<Post[]> {
-  const posts = await getCollection("blog", ({ data }) => !data.draft);
+  const posts = await getCollection("blog", ({ data }) => !data.draft && !data.hidden);
   return posts.sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
 }
 

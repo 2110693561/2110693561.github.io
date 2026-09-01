@@ -7,88 +7,199 @@
     <title>内容管理后台</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <style>
-      /* ===== 后台主题：与博客风格统一（清爽浅色 + 靛蓝主色） ===== */
+      /* ============================================================
+         后台主题 v2：参考主流后台（Sveltia / Notion 风格）
+         现代浅色 + 靛蓝主色，圆角卡片、柔和阴影、清晰层级
+         ============================================================ */
+      :root {
+        --bg: #f5f6fa;
+        --panel: #ffffff;
+        --border: #e5e8ef;
+        --text: #1a1f36;
+        --muted: #697089;
+        --accent: #4f46e5;
+        --accent-hover: #4338ca;
+        --accent-soft: #eef2ff;
+        --danger: #dc2626;
+        --radius: 12px;
+        --radius-sm: 8px;
+        --shadow-sm: 0 1px 2px rgba(23, 26, 46, 0.05);
+        --shadow-md: 0 8px 24px rgba(23, 26, 46, 0.09);
+      }
+      html,
       body {
-        background: #f4f5f8;
+        background: var(--bg);
       }
-      #nc-root {
-        font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
-          "Microsoft YaHei", "Noto Sans SC", sans-serif;
-        color: #1f2328;
-      }
-
-      /* 顶栏 */
-      #nc-root [class*="appBar" i] {
-        background: #ffffff;
-        border-bottom: 1px solid #e6e8ec;
-        box-shadow: none;
-      }
-
-      /* 侧边栏 */
-      #nc-root [class*="sidebar" i] {
-        background: #fbfbfd;
-        border-right: 1px solid #e6e8ec;
-      }
-
-      /* 内容卡片 */
-      #nc-root [class*="card" i] {
-        border-radius: 10px;
-        border: 1px solid #e6e8ec;
-        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-        transition: box-shadow 0.15s ease, transform 0.15s ease,
-          border-color 0.15s ease;
-      }
-      #nc-root [class*="card" i]:hover {
-        border-color: #c7cbd4;
-        box-shadow: 0 6px 16px rgba(16, 24, 40, 0.08);
-        transform: translateY(-1px);
-      }
-
-      /* 按钮：只调形状手感，不覆盖语义色 */
-      #nc-root button {
-        border-radius: 8px;
-        font-weight: 500;
-        transition: background 0.15s ease, box-shadow 0.15s ease,
-          border-color 0.15s ease, opacity 0.15s ease;
-      }
-      #nc-root [class*="btn" i][class*="primary" i],
-      #nc-root [class*="btn-primary" i] {
-        background: #4f46e5;
-      }
-      #nc-root [class*="btn" i][class*="primary" i]:hover,
-      #nc-root [class*="btn-primary" i]:hover {
-        background: #4338ca;
-      }
-
-      /* 表单控件 */
+      #nc-root,
+      #nc-root button,
       #nc-root input,
       #nc-root textarea,
       #nc-root select {
-        border-radius: 8px;
+        font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+          "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      }
+      #nc-root {
+        color: var(--text);
+      }
+
+      /* ---------- 顶栏 ---------- */
+      #nc-root [class*="appBar" i] {
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+        box-shadow: none;
+      }
+
+      /* ---------- 侧边栏 ---------- */
+      #nc-root [class*="sidebar" i] {
+        background: var(--panel);
+        border-right: 1px solid var(--border);
+      }
+      #nc-root [class*="sidebar" i] [class*="link" i],
+      #nc-root [class*="sidebar" i] [class*="item" i] {
+        border-radius: var(--radius-sm);
+        transition: background 0.14s ease, color 0.14s ease;
+      }
+      #nc-root [class*="sidebar" i] [class*="active" i] {
+        background: var(--accent-soft);
+        color: var(--accent) !important;
+      }
+
+      /* ---------- 列表卡片 ---------- */
+      #nc-root [class*="card" i] {
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--panel);
+        box-shadow: var(--shadow-sm);
+        transition: box-shadow 0.16s ease, transform 0.16s ease,
+          border-color 0.16s ease;
+      }
+      #nc-root [class*="card" i]:hover {
+        border-color: #c9cdf7;
+        box-shadow: var(--shadow-md);
+        transform: translateY(-1px);
+      }
+
+      /* ---------- 按钮 ---------- */
+      #nc-root button {
+        border-radius: var(--radius-sm);
+        font-weight: 500;
+        transition: background 0.15s ease, box-shadow 0.15s ease,
+          border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+      }
+      #nc-root [class*="btn" i][class*="primary" i],
+      #nc-root [class*="btn-primary" i] {
+        background: var(--accent);
+        box-shadow: var(--shadow-sm);
+      }
+      #nc-root [class*="btn" i][class*="primary" i]:hover,
+      #nc-root [class*="btn-primary" i]:hover {
+        background: var(--accent-hover);
+      }
+
+      /* ---------- 表单控件 ---------- */
+      #nc-root input,
+      #nc-root textarea,
+      #nc-root select {
+        border-radius: var(--radius-sm);
         transition: border-color 0.15s ease, box-shadow 0.15s ease;
       }
       #nc-root input:focus,
       #nc-root textarea:focus,
       #nc-root select:focus {
         outline: none;
-        border-color: #4f46e5;
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.14);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.13);
       }
 
-      /* 列表筛选/分组徽章做成胶囊 */
+      /* ---------- 筛选 / 分组胶囊 ---------- */
       #nc-root [class*="filter" i] button,
       #nc-root [class*="group" i] button {
         border-radius: 999px;
       }
 
-      /* 编辑器顶部工具栏圆角化 */
+      /* ---------- 编辑器 ---------- */
       #nc-root [class*="toolbar" i] {
-        border-radius: 8px;
+        border-radius: var(--radius-sm);
+      }
+      #nc-root [class*="controlPane" i],
+      #nc-root [class*="editorControlBar" i] {
+        background: var(--panel);
+      }
+
+      /* ---------- 登录页 ---------- */
+      #nc-root [class*="AuthenticationPage" i] {
+        background: var(--bg);
+      }
+
+      /* ---------- 滚动条 ---------- */
+      #nc-root ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      #nc-root ::-webkit-scrollbar-thumb {
+        background: #cdd2e0;
+        border-radius: 999px;
+        border: 2px solid var(--bg);
+      }
+      #nc-root ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      /* ---------- 「回到博客」按钮（JS 注入到顶栏） ---------- */
+      #back-to-blog {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent) !important;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+      #back-to-blog:hover {
+        background: var(--accent);
+        color: #ffffff !important;
+      }
+      @media (max-width: 720px) {
+        #back-to-blog {
+          padding: 5px 10px;
+          font-size: 12px;
+        }
       }
     </style>
   </head>
   <body>
     <!-- Decap CMS：文章 / 随手记 / 批注 / 项目 的网页管理后台 -->
     <script src="https://cdn.jsdelivr.net/npm/decap-cms@3/dist/decap-cms.js"></script>
+    <script>
+      // 在后台顶栏注入「← 回到博客」快捷按钮
+      (function () {
+        var SITE_URL = "https://2110693561.github.io/";
+        function ensure() {
+          if (document.getElementById("back-to-blog")) return;
+          var bar = document.querySelector('[class*="appBar" i]');
+          if (!bar) return;
+          var a = document.createElement("a");
+          a.id = "back-to-blog";
+          a.href = SITE_URL;
+          a.textContent = "← 回到博客";
+          bar.insertBefore(a, bar.firstChild);
+        }
+        var mo = new MutationObserver(ensure);
+        function start() {
+          if (document.body) {
+            mo.observe(document.body, { childList: true, subtree: true });
+            ensure();
+          } else {
+            setTimeout(start, 60);
+          }
+        }
+        start();
+      })();
+    </script>
   </body>
 </html>
