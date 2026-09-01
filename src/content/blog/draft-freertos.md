@@ -6,7 +6,7 @@ category: 嵌入式
 tags:
   - ESP32
   - FreeRTOS
-draft: true
+draft: false
 password: demo1234
 ---
 
