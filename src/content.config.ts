@@ -42,4 +42,22 @@ const notes = defineCollection({
   }),
 });
 
-export const collections = { blog, notes };
+// 资料：上传的文件记录，src/files/*.md（附件实体在 public/files/）
+// 用于个人资料库：支持在 /files/ 页面预览与下载
+const files = defineCollection({
+  loader: glob({
+    pattern: "*.md",
+    base: "./src/files",
+  }),
+  schema: z.object({
+    title: z.string(),
+    date: z.coerce.date(),
+    description: z.string().optional(),
+    // 附件地址（如 /files/xxx.pdf）
+    attachment: z.string(),
+    // 隐藏：不在资料页显示
+    hidden: z.boolean().default(false),
+  }),
+});
+
+export const collections = { blog, notes, files };
