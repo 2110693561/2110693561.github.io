@@ -701,7 +701,7 @@
                 state.title = slug;
               }
             }
-            var entry = { sha: json.sha, path: path, text: text, fm: m ? m[1] : "", state: state };
+            var entry = { sha: json.sha, path: path, text: text, fm: m ? m[1] : "", state: state, t: Date.now() };
             cache[col + "/" + slug] = entry;
             return entry;
           }
@@ -724,44 +724,53 @@
           entry.text = content;
           entry.fm = fm;
           entry.state = parseState(fm);
-          var meta = await fetch(GH + "/repos/" + REPO + "/contents/" + entry.path + "?ref=" + BRANCH, {
+          entry.t = Date.now();
+          // 刷新 sha 放到后台执行，不阻塞当前操作
+          fetch(GH + "/repos/" + REPO + "/contents/" + entry.path + "?ref=" + BRANCH, {
             headers: gh(t),
             cache: "no-store",
-          });
-          if (meta.ok) entry.sha = (await meta.json()).sha;
+          })
+            .then(function (r) {
+              return r.ok ? r.json() : null;
+            })
+            .then(function (j) {
+              if (j && j.sha) {
+                entry.sha = j.sha;
+                entry.t = Date.now();
+              }
+            })
+            .catch(function () {});
         }
         function slugOf(path) {
           return path.split("/").pop().replace(/\.(md|mdx)$/, "");
         }
+        function applyPatch(fm, patch) {
+          if ("draft" in patch) fm = setKey(fm, "draft", String(patch.draft));
+          if ("hidden" in patch) fm = setKey(fm, "hidden", String(patch.hidden));
+          if ("password" in patch)
+            fm = setKey(fm, "password", patch.password ? JSON.stringify(patch.password) : null);
+          return fm;
+        }
         async function save(col, slug, patch, actionName) {
           var t = token();
           if (!t) throw new Error("未检测到登录令牌，请退出后台重新登录");
-          // 写入前强制取最新版本，避免拿到过期的 sha 导致 409
-          delete cache[col + "/" + slug];
+          var key = col + "/" + slug;
+          var cached = cache[key];
+          // 快路径：2 分钟内操作过的条目直接用缓存版本提交，只发一次 PUT
+          if (cached && Date.now() - (cached.t || 0) < 120000) {
+            delete cache[key];
+            try {
+              await put(col, cached, applyPatch(cached.fm, patch), actionName);
+              return;
+            } catch (err) {
+              if (!/409|404/.test(err && err.message)) throw err;
+            }
+          }
+          // 慢路径：先取最新版本再改，避免过期的 sha 导致 409
+          delete cache[key];
           var entry = await load(col, slug);
           if (!entry) throw new Error("找不到条目文件（" + col + "/" + slug + "）");
-          var fm = entry.fm;
-          if ("draft" in patch) fm = setKey(fm, "draft", String(patch.draft));
-          if ("hidden" in patch) fm = setKey(fm, "hidden", String(patch.hidden));
-          if ("password" in patch) fm = setKey(fm, "password", patch.password ? JSON.stringify(patch.password) : null);
-          try {
-            await put(col, entry, fm, actionName);
-          } catch (err) {
-            // sha 过期（他处已更新）时刷新一次再试
-            if (/409|404/.test(err.message)) {
-              delete cache[col + "/" + slug];
-              var fresh = await load(col, slug);
-              if (fresh) {
-                var fm2 = fresh.fm;
-                if ("draft" in patch) fm2 = setKey(fm2, "draft", String(patch.draft));
-                if ("hidden" in patch) fm2 = setKey(fm2, "hidden", String(patch.hidden));
-                if ("password" in patch) fm2 = setKey(fm2, "password", patch.password ? JSON.stringify(patch.password) : null);
-                await put(col, fresh, fm2, actionName);
-                return;
-              }
-            }
-            throw err;
-          }
+          await put(col, entry, applyPatch(entry.fm, patch), actionName);
         }
         async function remove(col, slug) {
           var t = token();
@@ -830,6 +839,7 @@
               if (!col) return;
               try {
                 b.classList.add("busy");
+                toast("保存中…");
                 var entry = cache[col + "/" + slug] || (await load(col, slug));
                 if (!entry) throw new Error("找不到条目文件（" + col + "/" + slug + "）");
                 if (d.k === "open") {
