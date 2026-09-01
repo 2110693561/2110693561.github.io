@@ -15,6 +15,23 @@ media_folder: public/images
 public_folder: /images
 
 collections:
+  # ---------- 站点设置 ----------
+  - name: settings
+    label: 站点设置
+    editor:
+      preview: false
+    files:
+      - name: site
+        label: 基础信息
+        file: src/data/site.json
+        format: json
+        fields:
+          - { name: name, label: 站点名称（导航栏 logo）, widget: string }
+          - { name: author, label: 作者名（首页问候语、页脚版权）, widget: string }
+          - { name: title, label: 浏览器标签页标题, widget: string }
+          - { name: description, label: 站点描述（首页副标题、搜索引擎展示）, widget: text }
+          - { name: github, label: GitHub 主页链接, widget: string, required: false }
+
   # ---------- 文章 ----------
   - name: blog
     label: 文章

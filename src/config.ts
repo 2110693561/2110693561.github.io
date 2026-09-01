@@ -1,17 +1,20 @@
 // ============================================
 // 站点全局配置：想定制博客，改这一个文件就够了
+// 基础信息（站点名/作者/标题/描述/GitHub 链接）已移到 src/data/site.json，
+// 可在 CMS 后台「站点设置」里直接编辑，保存后自动构建生效。
 // ============================================
+
+import siteData from "./data/site.json";
 
 export const SITE = {
   // 站点名称（导航栏 logo 处显示）
-  name: "MyNote",
-  // 你的名字（页脚、RSS、SEO 用）
-  author: "zhang",
+  name: siteData.name,
+  // 你的名字（首页问候语、页脚、RSS、SEO 用）
+  author: siteData.author,
   // 浏览器标签页标题
-  title: "MyNote · 技术笔记",
+  title: siteData.title,
   // 站点描述（首页 hero、SEO）
-  description:
-    "个人技术博客：嵌入式 GD32 / ESP32、Linux 与 AI 的学习笔记、项目记录和随手记。",
+  description: siteData.description,
   // GitHub Pages 地址（username.github.io 仓库）
   website: "https://2110693561.github.io",
   // 仓库名为 yourname.github.io 时用 "/"；
@@ -33,7 +36,7 @@ export const NAV = [
 
 // 页脚社交链接
 export const SOCIALS = [
-  { name: "GitHub", url: "https://github.com/2110693561" },
+  { name: "GitHub", url: siteData.github },
   { name: "RSS", url: "/rss.xml" },
 ];
 
