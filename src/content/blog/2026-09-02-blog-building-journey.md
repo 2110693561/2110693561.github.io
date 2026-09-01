@@ -57,17 +57,50 @@ push 到 main ──> GitHub Actions：npm ci → astro build → deploy-pages
 
 ### 1. 内容状态：草稿 / 隐藏 / 加密
 
-在 schema 里给文章和随手记加了三个字段：
+在 schema 里给文章和随手记加了三个字段（`src/content.config.ts`）：
 
 ```ts
-draft: z.boolean().default(false),   // 不发布，仅后台可见
-hidden: z.boolean().default(false),  // 不进列表，直链可访问
-password: z.string().optional(),     // 加密
+// 草稿：只在后台可见，网站/RSS/搜索都不出现
+draft: z.boolean().default(false),
+// 隐藏：不在首页/列表/标签/分类/RSS/搜索中显示，但直接链接仍可访问
+hidden: z.boolean().default(false),
+// 设置后内容加密，访客输入密码才能查看
+password: z.string().optional(),
 ```
 
-所有列表查询统一过滤：`getCollection("blog", ({ data }) => !data.draft && !data.hidden)`。
+所有列表查询统一过滤：
 
-加密的实现分两端：**构建时**如果有 `password`，把渲染好的 HTML 用 AES-GCM 加密成密文写进页面，明文不落盘；**浏览器端**输入密码后用 PBKDF2 派生密钥解密。这样即使翻仓库源码也看不到加密内容。
+```ts
+export async function getSortedPosts(): Promise<Post[]> {
+  const posts = await getCollection("blog", ({ data }) => !data.draft && !data.hidden);
+  return posts.sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+}
+```
+
+加密的实现分两端。**构建时**（Node 端）用 AES-256-GCM 加密正文，密文和 salt/iv 一起内联进页面，明文不落盘：
+
+```ts
+import { randomBytes, pbkdf2Sync, createCipheriv } from "node:crypto";
+
+const PBKDF2_ITERATIONS = 120000;
+
+export function encryptForBrowser(plain: string, password: string) {
+  const salt = randomBytes(16);
+  const iv = randomBytes(12);
+  const key = pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 32, "sha256");
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  // WebCrypto 的 AES-GCM 要求 tag 附在密文尾部
+  return {
+    salt: salt.toString("base64"),
+    iv: iv.toString("base64"),
+    data: Buffer.concat([encrypted, tag]).toString("base64"),
+  };
+}
+```
+
+**浏览器端**拿到密文后，输入密码用 WebCrypto 的 `crypto.subtle.deriveKey`（PBKDF2 参数与构建端一致）派生密钥解密。这样即使直接翻仓库源码也看不到加密内容。
 
 ### 2. 后台增强：不改源码的 CSS/JS 注入
 
@@ -78,18 +111,100 @@ Decap 后台是 React 应用，没有官方主题能力。做法是在 `/admin/i
 - 编辑器里用 `MutationObserver` 监控 DOM，自动放大图片缩略图 + 点击灯箱
 - 注册自定义预览模板，让编辑器「预览」面板的排版与前台完全一致
 
-### 3. 批注系统
+注入按钮的核心模式——MutationObserver 监听 DOM 变化，按钮不存在就插一个（Decap 是 SPA，页面切换会重建 DOM，所以要常驻补位）：
 
-文章页选中文字 → 写批注 → **直接调 GitHub Contents API 提交** `src/data/annotations/` 下的 JSON 文件。构建时把批注数据内联进文章页，正文段落标号定位。批注按钮的垂直位置用 `getBoundingClientRect` 计算，并限制最低不越过文章标题，避免遮挡。
+```js
+function ensure() {
+  var host = document.querySelector('#nc-root [class*="appBar" i]');
+  if (host && !document.getElementById("back-to-blog")) {
+    var a = document.createElement("a");
+    a.id = "back-to-blog";
+    a.href = "https://xxx.github.io/";
+    a.textContent = "← 回到主页";
+    host.insertBefore(a, host.firstChild);
+  }
+}
+new MutationObserver(function () {
+  pending ||= setTimeout(ensure, 200); // 防抖，避免频繁操作 DOM
+}).observe(document.body, { childList: true, subtree: true });
+```
 
-### 4. 资料管理
+### 3. 批量提交：Git Data API（关键代码）
+
+这是整个后台最核心的一段：把 N 个文件合成**一次 commit**，绕开 GitHub 二级限流。流程是「建 blob → 建 tree → 建 commit → 更新分支引用」：
+
+```js
+// 批量提交：多个文件合成一次 commit
+async function ghPutFilesBatch(token, files, message) {
+  const j = async (url, opts) => {
+    const res = await fetch("https://api.github.com" + url,
+      { ...opts, headers: { Authorization: `token ${token}` } });
+    if (!res.ok) throw new Error("GitHub " + res.status);
+    return res.json();
+  };
+  // 1. 拿到分支最新 commit（每次都 no-store，避免旧引用导致 409）
+  const ref = await j(`/repos/${REPO}/git/ref/heads/${BRANCH}`, { cache: "no-store" });
+  const baseCommit = await j(`/repos/${REPO}/git/commits/${ref.object.sha}`);
+  // 2. 每个文件上传为 blob
+  const treeItems = [];
+  for (const f of files) {
+    const blob = await j(`/repos/${REPO}/git/blobs`, {
+      method: "POST",
+      body: JSON.stringify({ content: f.content, encoding: "base64" }),
+    });
+    treeItems.push({ path: f.path, mode: "100644", type: "blob", sha: blob.sha });
+  }
+  // 3. 建树（基于原树的 delta）→ 4. 建 commit → 5. 快进分支引用
+  const tree = await j(`/repos/${REPO}/git/trees`, {
+    method: "POST",
+    body: JSON.stringify({ base_tree: baseCommit.tree.sha, tree: treeItems }),
+  });
+  const commit = await j(`/repos/${REPO}/git/commits`, {
+    method: "POST",
+    body: JSON.stringify({ message, tree: tree.sha, parents: [baseCommit.sha] }),
+  });
+  await j(`/repos/${REPO}/git/refs/heads/${BRANCH}`, {
+    method: "PATCH",
+    body: JSON.stringify({ sha: commit.sha }),
+  });
+}
+```
+
+配合坑 3 的 409 问题，所有单文件写操作都遵循「先读最新 SHA，再提交」：
+
+```js
+// 先拉最新文件拿 SHA，再带着 SHA 提交，避免 409 Conflict
+const res = await fetch(`${GH}/repos/${REPO}/contents/${path}?t=${Date.now()}`, {
+  headers: { Authorization: `token ${token}` }, cache: "no-store",
+});
+const { sha } = await res.json();
+await fetch(`${GH}/repos/${REPO}/contents/${path}`, {
+  method: "PUT",
+  headers: { Authorization: `token ${token}` },
+  body: JSON.stringify({ message, content: btoa(content), sha }),
+});
+```
+
+### 4. 批注系统
+
+文章页选中文字 → 写批注 → **直接调 GitHub Contents API 提交** `src/data/annotations/` 下的 JSON 文件。构建时把批注数据内联进文章页，正文段落标号定位。批注按钮的垂直位置限制在文章标题以下，避免遮挡：
+
+```js
+// 按钮最高只出现在文章标题下方
+const header = document.querySelector(".post-header");
+const minTop = header ? header.getBoundingClientRect().bottom + 4 : 8;
+hoverBtn.style.top =
+  `${Math.max(minTop, Math.min(rect.top - 14, window.innerHeight - 48))}px`;
+```
+
+### 5. 资料管理
 
 - 资料条目是 `src/files/` 下的 Markdown，附件存 `public/files/`（加时间戳前缀防重名）
 - 批量上传：原生文件选择器 Ctrl/Shift 多选 → 逐个上传 → **合并为一次 git 提交** → 刷新列表
 - 预览页 `/files/`：图片直接显示、PDF 用 `embed` 内嵌、Markdown 渲染成页面，其他类型给下载链接
 - 删除资料时级联删除附件文件，避免媒体库残留孤儿文件
 
-### 5. 随手记导入
+### 6. 随手记导入
 
 支持两种方式：
 
@@ -98,11 +213,44 @@ Decap 后台是 React 应用，没有官方主题能力。做法是在 `/admin/i
 
 所有文件合并成**一次 git 提交**（Git Data API：创建 tree → 创建 commit → 更新 ref），既快又不会触发限流。
 
-### 6. 前台体验
+### 7. 前台体验
 
-- **随手记折叠**：首页区块用原生 `<details>/<summary>` 整体折叠；每条笔记默认 `max-height: 150px` + 底部渐变遮罩 + 「展开全文」按钮，JS 判断内容不足一屏就不折叠
-- **图片灯箱**：点击图片全屏预览，Esc/点遮罩关闭
-- **编辑器预览**：`CMS.registerPreviewTemplate` + 前台同款 `.prose` 样式表，预览即所见即所得
+**随手记折叠**：首页区块用原生 `<details>/<summary>` 整体折叠；每条笔记默认只显示开头，`scrollHeight` 判断内容短就直接完整显示，避免出现无意义的按钮：
+
+```js
+document.querySelectorAll(".note-fold").forEach((box) => {
+  const content = box.querySelector(".note-content");
+  const btn = box.querySelector(".note-fold-btn");
+  if (content.scrollHeight <= 150) {       // 内容不长就不折叠
+    box.removeAttribute("data-collapsed");
+    return;
+  }
+  btn.hidden = false;
+  btn.addEventListener("click", () => {
+    if (box.hasAttribute("data-collapsed")) {
+      box.removeAttribute("data-collapsed");
+      btn.textContent = "收起";
+    } else {
+      box.setAttribute("data-collapsed", "");
+      btn.textContent = "展开全文";
+    }
+  });
+});
+```
+
+**编辑器预览**：注册自定义预览模板，套上前台同款 `.prose` 样式表，预览即所见即所得（还要把明暗主题同步进预览 iframe）：
+
+```js
+CMS.registerPreviewStyle("/admin/preview.css");
+var MarkdownPreview = createClass({
+  render: function () {
+    // widgetFor 用 Decap 内置渲染 Markdown，容器套前台排版
+    return h("div", { className: "prose" }, this.props.widgetFor("body"));
+  }
+});
+CMS.registerPreviewTemplate("blog", MarkdownPreview);
+CMS.registerPreviewTemplate("notes", MarkdownPreview);
+```
 
 ## 五、踩坑实录：问题与解决
 
