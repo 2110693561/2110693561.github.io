@@ -374,7 +374,17 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
     overflow: auto;
     background: var(--bg);
   }
-  /* 图片模式：图片自适应弹窗大小，不溢出 */
+  /* 图片模式：图片自适应弹窗大小，不溢出（不依赖 JS 类名，纯 CSS 兜底） */
+  .file-modal-body > img {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 6px;
+  }
   .file-modal-body.has-image {
     display: flex;
     align-items: center;

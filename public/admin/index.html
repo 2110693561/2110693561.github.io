@@ -1003,16 +1003,35 @@
         function safeName(s) {
           return s.replace(/[\\/#?%&"'<>|:*\s]+/g, "_").replace(/^_+|_+$/g, "") || "file";
         }
-        async function ghPutFile(t, path, b64Content, message) {
-          var res = await fetch(
-            GH + "/repos/" + REPO + "/contents/" + path.split("/").map(encodeURIComponent).join("/"),
-            {
-              method: "PUT",
-              headers: gh(t),
-              body: JSON.stringify({ message: message, content: b64Content, branch: BRANCH }),
-            }
-          );
-          if (!res.ok) throw await ghError(res);
+        function ghPutFile(t, path, b64Content, message, onProgress) {
+          // XHR 而非 fetch：可读取上传字节进度，大文件也能看到实时百分比
+          return new Promise(function (resolve, reject) {
+            var xhr = new XMLHttpRequest();
+            xhr.open(
+              "PUT",
+              GH + "/repos/" + REPO + "/contents/" + path.split("/").map(encodeURIComponent).join("/")
+            );
+            var h = gh(t);
+            Object.keys(h).forEach(function (k) {
+              xhr.setRequestHeader(k, h[k]);
+            });
+            xhr.upload.onprogress = function (e) {
+              if (e.lengthComputable && onProgress)
+                onProgress(Math.round((e.loaded / e.total) * 100));
+            };
+            xhr.onload = function () {
+              if (xhr.status >= 200 && xhr.status < 300) return resolve();
+              var msg = "";
+              try {
+                msg = JSON.parse(xhr.responseText).message || "";
+              } catch (e) {}
+              reject(new Error("GitHub " + xhr.status + "：" + (msg || xhr.statusText)));
+            };
+            xhr.onerror = function () {
+              reject(new Error("网络错误"));
+            };
+            xhr.send(JSON.stringify({ message: message, content: b64Content, branch: BRANCH }));
+          });
         }
         async function bulkUpload(fileList) {
           var t = token();
@@ -1028,21 +1047,41 @@
             var urls = new Array(arr.length);
             var failed = [];
             var done = 0;
-            var idx = 0;
             var CONC = 4; // 并行上传数
+            // 小文件先传（快速完成），大文件并行压轴，整体体感更快
+            var order = arr
+              .map(function (f, i) {
+                return { i: i, f: f };
+              })
+              .sort(function (a, b) {
+                return a.f.size - b.f.size;
+              });
+            var cur = 0;
             async function worker() {
-              while (idx < arr.length) {
-                var i = idx++;
-                var f = arr[i];
+              while (cur < order.length) {
+                var it = order[cur++];
+                var f = it.f;
                 try {
-                  toast("上传中 " + (done + 1) + "/" + arr.length + "：" + f.name);
-                  var fname = Date.now().toString(36) + "-" + i + "-" + safeName(f.name);
-                  await ghPutFile(t, "public/files/" + fname, await b64OfBlob(f), "上传资料：" + f.name);
-                  urls[i] = "/files/" + fname;
+                  var fname = Date.now().toString(36) + "-" + it.i + "-" + safeName(f.name);
+                  var mb = (f.size / 1048576).toFixed(1);
+                  await ghPutFile(
+                    t,
+                    "public/files/" + fname,
+                    await b64OfBlob(f),
+                    "上传资料：" + f.name,
+                    function (pct) {
+                      toast(
+                        "上传中 " + f.name + "（" + mb + "MB）" + pct + "% · 完成 " + done + "/" + arr.length
+                      );
+                    }
+                  );
+                  urls[it.i] = "/files/" + fname;
+                  done++;
+                  toast("已完成 " + done + "/" + arr.length + "：" + f.name);
                 } catch (err) {
+                  done++;
                   failed.push(f.name + "：" + ((err && err.message) || err));
                 }
-                done++;
               }
             }
             var workers = [];
