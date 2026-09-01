@@ -1147,7 +1147,7 @@
         function safeName(s) {
           return s.replace(/[\\/#?%&"'<>|:*\s]+/g, "_").replace(/^_+|_+$/g, "") || "file";
         }
-        function ghPutFile(t, path, b64Content, message, onProgress) {
+        function ghPutFile(t, path, b64Content, message, onProgress, sha) {
           // XHR 而非 fetch：可读取上传字节进度，大文件也能看到实时百分比
           return new Promise(function (resolve, reject) {
             var xhr = new XMLHttpRequest();
@@ -1174,8 +1174,26 @@
             xhr.onerror = function () {
               reject(new Error("网络错误"));
             };
-            xhr.send(JSON.stringify({ message: message, content: b64Content, branch: BRANCH }));
+            var body = { message: message, content: b64Content, branch: BRANCH };
+            if (sha) body.sha = sha; // 覆盖已存在的文件必须带上原 sha
+            xhr.send(JSON.stringify(body));
           });
+        }
+        // 覆盖式上传：文件已存在（422）时自动取原 sha 重传
+        async function ghPutFileCover(t, path, b64Content, message, onProgress) {
+          try {
+            await ghPutFile(t, path, b64Content, message, onProgress);
+          } catch (err) {
+            if (!/^GitHub 42[22]/.test(err && err.message)) throw err;
+            var enc = path.split("/").map(encodeURIComponent).join("/");
+            var res = await fetch(GH + "/repos/" + REPO + "/contents/" + enc + "?ref=" + BRANCH, {
+              headers: gh(t),
+              cache: "no-store",
+            });
+            if (!res.ok) throw err;
+            var meta = await res.json();
+            await ghPutFile(t, path, b64Content, message, onProgress, meta.sha);
+          }
         }
         // 批量提交：多个文件合成一次 commit（避免连续提交触发 GitHub 次级限流导致后台登出）
         async function ghPutFilesBatch(t, files, message) {
@@ -1213,6 +1231,41 @@
             method: "PATCH",
             body: JSON.stringify({ sha: commit.sha }),
           });
+        }
+        // 创建资料条目（bulkUpload 与文件夹上传共用）：urls 为 /files/... 附件地址
+        async function createFilesEntry(t, name, urls) {
+          var base = safeName(name);
+          var slug = base;
+          var fm =
+            "---\n" +
+            'title: "' +
+            name.replace(/"/g, '\\"') +
+            '"\n' +
+            "date: " +
+            todayStr() +
+            "\n" +
+            "attachments:\n" +
+            urls
+              .map(function (u) {
+                return "  - file: " + u + "\n";
+              })
+              .join("");
+          fm = fm.replace(/\n$/, "\n") + "---\n";
+          toast("创建资料条目…");
+          try {
+            await ghPutFile(t, "src/files/" + slug + ".md", b64(fm), "新增资料：" + name);
+          } catch (err) {
+            if (/422|already exists/i.test(err && err.message)) {
+              slug = base + "-" + Date.now().toString(36);
+              await ghPutFile(t, "src/files/" + slug + ".md", b64(fm), "新增资料：" + name);
+            } else {
+              throw err;
+            }
+          }
+          toast("已上传 " + urls.length + " 个文件，构建后生效");
+          setTimeout(function () {
+            location.reload();
+          }, 1500);
         }
         async function bulkUpload(fileList) {
           var t = token();
@@ -1272,38 +1325,107 @@
             if (!urls.length)
               throw new Error("全部文件上传失败：" + failed.join("；"));
             if (failed.length) toast(failed.length + " 个文件失败，其余已上传，正在创建资料条目…");
-            var base = safeName(name);
-            var slug = base;
-            var fm =
-              "---\n" +
-              'title: "' +
-              name.replace(/"/g, '\\"') +
-              '"\n' +
-              "date: " +
-              todayStr() +
-              "\n" +
-              "attachments:\n" +
-              urls
-                .map(function (u) {
-                  return "  - file: " + u + "\n";
-                })
-                .join("");
-            fm = fm.replace(/\n$/, "\n") + "---\n";
-            toast("创建资料条目…");
-            try {
-              await ghPutFile(t, "src/files/" + slug + ".md", b64(fm), "新增资料：" + name);
-            } catch (err) {
-              if (/422|already exists/i.test(err && err.message)) {
-                slug = base + "-" + Date.now().toString(36);
-                await ghPutFile(t, "src/files/" + slug + ".md", b64(fm), "新增资料：" + name);
-              } else {
-                throw err;
+            await createFilesEntry(t, name, urls);
+          } catch (err) {
+            alert("上传失败：" + ((err && err.message) || err));
+          }
+        }
+        // ---------- 文件夹上传：整个文件夹（含子文件夹）合并为一条资料，保留相对结构 ----------
+        var SKIP_RE = /^(\.ds_store|thumbs\.db|desktop\.ini)$/i;
+        function isJunkFile(f) {
+          return f.name.indexOf(".") === 0 || SKIP_RE.test(f.name);
+        }
+        // webkitRelativePath 去掉顶层文件夹名后的相对路径（md 图片相对引用依赖结构不变）
+        function relPathOf(f, root) {
+          var rp = f.webkitRelativePath || f.name;
+          if (root && rp.indexOf(root + "/") === 0) rp = rp.slice(root.length + 1);
+          return rp;
+        }
+        function safeRelPath(rel) {
+          return rel
+            .split("/")
+            .map(function (seg) {
+              return safeName(seg);
+            })
+            .join("/");
+        }
+        async function bulkUploadFolder(fileList) {
+          var t = token();
+          if (!t) {
+            alert("文件夹上传需要登录令牌，请退出后台重新登录");
+            return;
+          }
+          var arr = Array.prototype.slice.call(fileList).filter(function (f) {
+            return !isJunkFile(f);
+          });
+          if (!arr.length) {
+            alert("文件夹里没有可上传的文件");
+            return;
+          }
+          var root = (arr[0].webkitRelativePath || arr[0].name).split("/")[0];
+          var name = prompt(
+            "资料名称（文件夹内所有文件将合并为这一条资料，保留相对结构，md 图片相对引用可直接显示）：",
+            root
+          );
+          if (!name) return;
+          var base = safeName(root);
+          try {
+            var urls = [];
+            var failed = [];
+            var big = [];
+            var small = [];
+            arr.forEach(function (f) {
+              (f.size < 2 * 1048576 ? small : big).push(f);
+            });
+            // 大文件（≥2MB）逐个传，有实时进度；同路径已存在则覆盖
+            for (var i = 0; i < big.length; i++) {
+              var f = big[i];
+              var mb = (f.size / 1048576).toFixed(1);
+              var path = "public/files/" + base + "/" + safeRelPath(relPathOf(f, root));
+              try {
+                await ghPutFileCover(
+                  t,
+                  path,
+                  await b64OfBlob(f),
+                  "上传资料：" + f.name,
+                  (function (fn, size) {
+                    return function (pct) {
+                      toast("上传中 " + fn + "（" + size + "MB）" + pct + "%");
+                    };
+                  })(f.name, mb)
+                );
+                urls.push("/files/" + path.replace("public/files/", ""));
+                toast("已完成大文件 " + (i + 1) + "/" + big.length + "：" + f.name);
+              } catch (err) {
+                failed.push(f.name + "：" + ((err && err.message) || err));
               }
             }
-            toast("已上传 " + urls.length + " 个文件，构建后生效");
-            setTimeout(function () {
-              location.reload();
-            }, 1500);
+            // 小文件每 15 个合并为一次 commit，避免连续提交触发 GitHub 次级限流导致后台登出
+            for (var s = 0; s < small.length; s += 15) {
+              var chunk = small.slice(s, s + 15);
+              var items = [];
+              for (var k = 0; k < chunk.length; k++) {
+                items.push({
+                  path: "public/files/" + base + "/" + safeRelPath(relPathOf(chunk[k], root)),
+                  content: await b64OfBlob(chunk[k]),
+                });
+              }
+              try {
+                await ghPutFilesBatch(t, items, "上传资料（批量）：" + base);
+                items.forEach(function (it) {
+                  urls.push("/files/" + it.path.replace("public/files/", ""));
+                });
+                toast("已上传小文件 " + Math.min(s + 15, small.length) + "/" + small.length);
+              } catch (err) {
+                chunk.forEach(function (cf) {
+                  failed.push(cf.name + "：" + ((err && err.message) || err));
+                });
+              }
+            }
+            if (!urls.length)
+              throw new Error("全部文件上传失败：" + failed.join("；"));
+            if (failed.length) toast(failed.length + " 个文件失败，其余已上传，正在创建资料条目…");
+            await createFilesEntry(t, name, urls);
           } catch (err) {
             alert("上传失败：" + ((err && err.message) || err));
           }
@@ -1317,32 +1439,60 @@
           bulkInput.value = "";
           bulkUpload(fl);
         });
+        var folderUploadInput = document.createElement("input");
+        folderUploadInput.type = "file";
+        folderUploadInput.webkitdirectory = true; // 选择整个文件夹（递归包含子文件夹）
+        folderUploadInput.style.display = "none";
+        folderUploadInput.addEventListener("change", function () {
+          var fl = folderUploadInput.files;
+          folderUploadInput.value = "";
+          bulkUploadFolder(fl);
+        });
         function injectUpload() {
           if (collection() !== "files") {
             var old = document.getElementById("qa-bulk-upload");
             if (old) old.remove();
+            var oldFolder = document.getElementById("qa-folder-upload");
+            if (oldFolder) oldFolder.remove();
             return;
           }
-          if (document.getElementById("qa-bulk-upload")) return;
-          var anchor = null;
-          var cands = document.querySelectorAll("#nc-root button, #nc-root a");
-          for (var i = 0; i < cands.length; i++) {
-            var txt = (cands[i].textContent || "").trim();
-            if (/^\+\s*资料$/.test(txt)) {
-              anchor = cands[i];
-              break;
+          if (!document.getElementById("qa-bulk-upload")) {
+            var anchor = null;
+            var cands = document.querySelectorAll("#nc-root button, #nc-root a");
+            for (var i = 0; i < cands.length; i++) {
+              var txt = (cands[i].textContent || "").trim();
+              if (/^\+\s*资料$/.test(txt)) {
+                anchor = cands[i];
+                break;
+              }
+            }
+            if (!anchor) return;
+            var btn = document.createElement("button");
+            btn.id = "qa-bulk-upload";
+            btn.type = "button";
+            btn.textContent = "批量上传";
+            btn.title = "一次选择多个文件（可按住 Ctrl / Shift 多选），自动合并为一条资料";
+            btn.addEventListener("click", function () {
+              bulkInput.click();
+            });
+            if (anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor);
+          }
+          // 文件夹上传：选择一个文件夹，内含所有文件（含子文件夹）合并为一条资料
+          if (!document.getElementById("qa-folder-upload")) {
+            var anchor2 = document.getElementById("qa-bulk-upload");
+            if (anchor2 && anchor2.parentElement) {
+              var fbtn = document.createElement("button");
+              fbtn.id = "qa-folder-upload";
+              fbtn.type = "button";
+              fbtn.textContent = "📁 上传文件夹";
+              fbtn.title =
+                "选择一个文件夹，内部所有文件（含子文件夹）将合并为一条资料；保留相对结构，说明文档里的图片相对引用可直接显示";
+              fbtn.addEventListener("click", function () {
+                folderUploadInput.click();
+              });
+              anchor2.parentElement.insertBefore(fbtn, anchor2);
             }
           }
-          if (!anchor) return;
-          var btn = document.createElement("button");
-          btn.id = "qa-bulk-upload";
-          btn.type = "button";
-          btn.textContent = "批量上传";
-          btn.title = "一次选择多个文件（可按住 Ctrl / Shift 多选），自动合并为一条资料";
-          btn.addEventListener("click", function () {
-            bulkInput.click();
-          });
-          if (anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor);
         }
 
         // 从仓库删除任意文件（先查 sha 再删）；path 支持 "/files/x" 或 "public/files/x"
