@@ -866,12 +866,41 @@
                 }
                 if (d.k === "delete") {
                   b.classList.remove("busy");
-                  if (!confirm("确定删除《" + (entry.state.title || slug) + "》？文件将从仓库删除，不可恢复。")) return;
+                  var isFile = col === "files";
+                  var atts =
+                    isFile && entry.state && entry.state.attachments
+                      ? entry.state.attachments
+                          .map(function (a) {
+                            return (a && a.file) || a;
+                          })
+                          .filter(Boolean)
+                      : [];
+                  if (
+                    !confirm(
+                      "确定删除《" +
+                        (entry.state.title || slug) +
+                        "》？" +
+                        (isFile && atts.length
+                          ? "将同时删除 " + atts.length + " 个附件文件，"
+                          : "文件将从仓库删除，") +
+                        "不可恢复。"
+                    )
+                  )
+                    return;
                   b.classList.add("busy");
                   await remove(col, slug);
+                  // 资料：连带删除附件文件，避免媒体库残留已删条目的文件
+                  if (isFile && atts.length) {
+                    var dt = token();
+                    for (var ai = 0; ai < atts.length; ai++) {
+                      try {
+                        await deleteRepoFile(dt, atts[ai]);
+                      } catch (e) {}
+                    }
+                  }
                   var row = b.closest("a");
                   if (row) row.remove();
-                  toast("已删除，构建后生效");
+                  toast("已删除" + (isFile && atts.length ? "（含 " + atts.length + " 个附件）" : "") + "，构建后生效");
                   return;
                 }
                 if (d.k === "password") {
@@ -1164,6 +1193,128 @@
           if (anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor);
         }
 
+        // 从仓库删除任意文件（先查 sha 再删）；path 支持 "/files/x" 或 "public/files/x"
+        async function deleteRepoFile(t, path) {
+          if (!t || !path) return;
+          var p = String(path).replace(/^\//, "");
+          if (/^files\//.test(p)) p = "public/" + p;
+          var enc = p.split("/").map(encodeURIComponent).join("/");
+          var res = await fetch(GH + "/repos/" + REPO + "/contents/" + enc + "?ref=" + BRANCH, {
+            headers: gh(t),
+          });
+          if (res.status === 404) return; // 文件已不存在，视为成功
+          if (!res.ok) throw await ghError(res);
+          var j = await res.json();
+          var del = await fetch(GH + "/repos/" + REPO + "/contents/" + enc, {
+            method: "DELETE",
+            headers: gh(t),
+            body: JSON.stringify({ message: "删除附件：" + p, sha: j.sha, branch: BRANCH }),
+          });
+          if (!del.ok && del.status !== 404) throw await ghError(del);
+        }
+
+        function sleep(ms) {
+          return new Promise(function (r) {
+            setTimeout(r, ms);
+          });
+        }
+        function setNativeValue(el, value) {
+          var proto =
+            el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          var desc = Object.getOwnPropertyDescriptor(proto, "value");
+          if (desc && desc.set) desc.set.call(el, value);
+          else el.value = value;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        // 把选中的 URL 填进「选择文件」按钮所在的附件项
+        function fillAttachmentItem(btn, url) {
+          var item =
+            btn.closest('[class*="item" i]') ||
+            btn.closest("li") ||
+            btn.closest('[class*="card" i]') ||
+            btn.parentElement;
+          var input = item && item.querySelector('input[type="text"], input:not([type])');
+          if (!input) {
+            toast("未能自动填入，请用「从 URL 插入」：" + url);
+            return false;
+          }
+          setNativeValue(input, url);
+          return true;
+        }
+        function findAddBtn() {
+          var cands = document.querySelectorAll("#nc-root button, #nc-root a");
+          for (var i = 0; i < cands.length; i++) {
+            var t = (cands[i].textContent || "").trim();
+            if (/^(新增|添加|新增文件|添加文件)/.test(t) && /\+/.test(cands[i].textContent)) return cands[i];
+          }
+          return null;
+        }
+        // 编辑资料时点「选择文件」：改用原生多选，多个文件全部上传后自动填入列表
+        var attInput = document.createElement("input");
+        attInput.type = "file";
+        attInput.multiple = true;
+        attInput.style.display = "none";
+        attInput.addEventListener("change", function () {
+          var fl = Array.prototype.slice.call(attInput.files);
+          attInput.value = "";
+          if (!fl.length) return;
+          var pickBtn = attInput._pickBtn;
+          (async function () {
+            var t = token();
+            if (!t) {
+              alert("上传需要登录令牌，请退出后台重新登录");
+              return;
+            }
+            try {
+              var urls = [];
+              for (var i = 0; i < fl.length; i++) {
+                var f = fl[i];
+                toast("上传中 " + (i + 1) + "/" + fl.length + "：" + f.name);
+                var fname = Date.now().toString(36) + "-" + i + "-" + safeName(f.name);
+                await ghPutFile(t, "public/files/" + fname, await b64OfBlob(f), "上传资料：" + f.name);
+                urls.push("/files/" + fname);
+              }
+              if (!pickBtn) return;
+              fillAttachmentItem(pickBtn, urls[0]);
+              if (urls.length > 1) {
+                var addBtn = findAddBtn();
+                for (var k = 1; k < urls.length; k++) {
+                  if (!addBtn) break;
+                  addBtn.click();
+                  await sleep(350);
+                  var btns = document.querySelectorAll("#nc-root button, #nc-root a");
+                  var last = null;
+                  for (var q = 0; q < btns.length; q++) {
+                    if ((btns[q].textContent || "").trim() === "选择文件") last = btns[q];
+                  }
+                  if (last) fillAttachmentItem(last, urls[k]);
+                }
+              }
+              toast("已上传并填入 " + urls.length + " 个文件，记得点「发布」保存");
+            } catch (err) {
+              alert("上传失败：" + ((err && err.message) || err));
+            }
+          })();
+        });
+        // 捕获阶段拦截「选择文件」，改走我们的多选上传
+        document.addEventListener(
+          "click",
+          function (e) {
+            if (collection() !== "files") return;
+            var tgt = e.target;
+            var btn = tgt && tgt.closest ? tgt.closest("#nc-root button, #nc-root a") : null;
+            if (!btn) return;
+            if ((btn.textContent || "").trim() !== "选择文件") return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            attInput._pickBtn = btn;
+            attInput.value = "";
+            attInput.click();
+          },
+          true
+        );
+
         // 资料集合的媒体库弹窗：隐藏「媒体资源」旧文件列表，自动停在「上传新的」
         function tameMediaLibrary() {
           if (collection() !== "files") return;
@@ -1201,6 +1352,7 @@
         function start() {
           if (document.body) {
             document.body.appendChild(bulkInput);
+            document.body.appendChild(attInput);
             mo.observe(document.body, { childList: true, subtree: true });
             window.addEventListener("hashchange", function () {
               setTimeout(function () {
