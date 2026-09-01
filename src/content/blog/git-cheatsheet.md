@@ -5,6 +5,7 @@ date: 2026-08-20
 category: 工具
 tags: [Git, 效率]
 draft: true
+password: "123"
 
 ---
 
