@@ -1362,99 +1362,141 @@
         noteInput.addEventListener("change", function () {
           var fl = Array.prototype.slice.call(noteInput.files);
           noteInput.value = "";
-          if (!fl.length) return;
-          (async function () {
-            var t = token();
-            if (!t) {
-              alert("导入需要登录令牌，请退出后台重新登录");
-              return;
-            }
-            var IMG = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
-            var mds = fl.filter(function (f) {
-              return !IMG.test(f.name);
-            });
-            var imgs = fl.filter(function (f) {
-              return IMG.test(f.name);
-            });
-            // 图片按文件名建索引（不区分大小写），供 markdown 路径改写
-            var imgMap = {};
-            imgs.forEach(function (im) {
-              imgMap[im.name.toLowerCase()] = im;
-            });
-            try {
-              var okCount = 0;
-              var imgCount = 0;
-              for (var i = 0; i < mds.length; i++) {
-                var f = mds[i];
-                toast("导入中 " + (i + 1) + "/" + mds.length + "：" + f.name);
-                var raw = await f.text();
-                // 文件本身带 frontmatter 的原样导入，否则补上标题和日期
-                var hasFm = /^\uFEFF?---\s*\r?\n/.test(raw);
-                var base = f.name.replace(/\.(md|markdown|txt)$/i, "");
-                var body = hasFm
-                  ? raw
-                  : '---\ntitle: "' +
-                    base.replace(/"/g, '\\"') +
-                    '"\ndate: ' +
-                    todayStr() +
-                    "\ntags: []\n---\n\n" +
-                    raw;
-                var fname = Date.now().toString(36) + "-" + i + "-" + safeName(base) + ".md";
-                // 笔记引用的图片：上传到 public/images/notes/<slug>/ 并改写路径
-                var imgDir = "public/images/notes/" + safeName(base) + "/";
-                var uploaded = {};
-                body = body.replace(
-                  /(!\[[^\]]*\]\()([^)\s]+)(\))/g,
-                  function (m, pre, path, post) {
-                    var bn = path.split("/").pop().split("?")[0];
-                    var hit = imgMap[bn.toLowerCase()];
-                    if (!hit) {
-                      // 没有携带该图片：替换为占位文本，避免构建时找不到文件报错
-                      return "*（图片待补充：" + bn + "）*";
-                    }
-                    var newName = safeName(bn.replace(IMG, "")) + (bn.match(IMG) || [""])[0].toLowerCase();
-                    var url = "/images/notes/" + safeName(base) + "/" + newName;
-                    uploaded[bn.toLowerCase()] = { file: hit, name: newName };
-                    return pre + url + post;
-                  }
-                );
-                // 先传图片（同名只传一次），再传笔记
-                var keys = Object.keys(uploaded);
-                for (var u = 0; u < keys.length; u++) {
-                  var item = uploaded[keys[u]];
-                  toast("上传图片 " + (u + 1) + "/" + keys.length + "：" + item.name);
-                  var data = await new Promise(function (res, rej) {
-                    var r = new FileReader();
-                    r.onload = function () {
-                      res(String(r.result).split(",")[1]);
-                    };
-                    r.onerror = function () {
-                      rej(new Error("读取图片失败：" + item.file.name));
-                    };
-                    r.readAsDataURL(item.file);
-                  });
-                  await ghPutFile(t, imgDir + item.name, data, "导入笔记图片：" + item.name);
-                  imgCount++;
-                }
-                await ghPutFile(t, "src/content/notes/" + fname, b64(body), "导入随手记：" + base);
-                okCount++;
-              }
-              toast(
-                "已导入 " + okCount + " 篇随手记" + (imgCount ? "、" + imgCount + " 张图片" : "") + "，构建后生效"
-              );
-              setTimeout(function () {
-                location.reload();
-              }, 1500);
-            } catch (err) {
-              alert("导入失败：" + ((err && err.message) || err));
-            }
-          })();
+          if (fl.length) importNotesJob(fl, false);
         });
+
+        // 文件夹导入：直接选笔记所在文件夹（Typora 结构：笔记.md + 笔记.assets/）
+        var noteFolderInput = document.createElement("input");
+        noteFolderInput.type = "file";
+        noteFolderInput.multiple = true;
+        noteFolderInput.webkitdirectory = true;
+        noteFolderInput.style.display = "none";
+        noteFolderInput.addEventListener("change", function () {
+          var fl = Array.prototype.slice.call(noteFolderInput.files);
+          noteFolderInput.value = "";
+          if (fl.length) importNotesJob(fl, true);
+        });
+
+        async function importNotesJob(fl, byFolder) {
+          var t = token();
+          if (!t) {
+            alert("导入需要登录令牌，请退出后台重新登录");
+            return;
+          }
+          var IMG = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
+          var SKIP = /(^|\/)(\.DS_Store|Thumbs\.db|desktop\.ini)$/i;
+          function relOf(f) {
+            return (byFolder && f.webkitRelativePath) || f.name;
+          }
+          var mds = fl.filter(function (f) {
+            var rp = relOf(f);
+            return /\.(md|markdown|txt)$/i.test(rp) && !IMG.test(rp) && !SKIP.test(rp);
+          });
+          var imgFiles = fl.filter(function (f) {
+            var rp = relOf(f);
+            return IMG.test(rp) && !SKIP.test(rp);
+          });
+          if (!mds.length) {
+            alert("所选内容里没有 .md / .txt 笔记文件");
+            return;
+          }
+          try {
+            var okCount = 0;
+            var imgCount = 0;
+            for (var i = 0; i < mds.length; i++) {
+              var f = mds[i];
+              toast("导入中 " + (i + 1) + "/" + mds.length + "：" + f.name);
+              var raw = await f.text();
+              // 文件本身带 frontmatter 的原样导入，否则补上标题和日期
+              var hasFm = /^\uFEFF?---\s*\r?\n/.test(raw);
+              var base = f.name.replace(/\.(md|markdown|txt)$/i, "");
+              var slug = safeName(base);
+              var body = hasFm
+                ? raw
+                : '---\ntitle: "' +
+                  base.replace(/"/g, '\\"') +
+                  '"\ndate: ' +
+                  todayStr() +
+                  "\ntags: []\n---\n\n" +
+                  raw;
+              var fname = Date.now().toString(36) + "-" + i + "-" + slug + ".md";
+              // 该笔记对应的图片：优先「笔记名.assets/」文件夹，其次同目录 assets/
+              var rel = relOf(f);
+              var dir = rel.indexOf("/") >= 0 ? rel.slice(0, rel.lastIndexOf("/")) : "";
+              var noteImgs = byFolder
+                ? imgFiles.filter(function (im) {
+                    var rp = relOf(im);
+                    var low = rp.toLowerCase();
+                    if (low.indexOf((base + ".assets/").toLowerCase()) !== -1) return true;
+                    if (dir) {
+                      var imdir = rp.indexOf("/") >= 0 ? rp.slice(0, rp.lastIndexOf("/")) : "";
+                      if (imdir === dir + "/assets" || (imdir === dir && low.indexOf("/assets/") !== -1))
+                        return true;
+                    }
+                    return false;
+                  })
+                : imgFiles;
+              var noteMap = {};
+              noteImgs.forEach(function (im) {
+                noteMap[im.name.toLowerCase()] = im;
+              });
+              // 改写引用：匹配到的换成线上地址；没匹配的换成占位文本（防止构建报错）
+              var imgDir = "public/images/notes/" + slug + "/";
+              var uploaded = {};
+              body = body.replace(
+                /(!\[[^\]]*\]\()([^)\s]+)(\))/g,
+                function (m, pre, path, post) {
+                  var bn = path.split("/").pop().split("?")[0];
+                  var hit = noteMap[bn.toLowerCase()];
+                  if (!hit) {
+                    return "*（图片待补充：" + bn + "）*";
+                  }
+                  var ext = (bn.match(IMG) || [""])[0].toLowerCase();
+                  var newName = safeName(bn.replace(IMG, "")) + ext;
+                  if (!newName) newName = "img" + ext;
+                  var url = "/images/notes/" + slug + "/" + newName;
+                  uploaded[bn.toLowerCase()] = { file: hit, name: newName };
+                  return pre + url + post;
+                }
+              );
+              // 先传图片（同名只传一次），再传笔记
+              var keys = Object.keys(uploaded);
+              for (var u = 0; u < keys.length; u++) {
+                var item = uploaded[keys[u]];
+                toast("上传图片 " + (u + 1) + "/" + keys.length + "：" + item.name);
+                var data = await new Promise(function (res, rej) {
+                  var r = new FileReader();
+                  r.onload = function () {
+                    res(String(r.result).split(",")[1]);
+                  };
+                  r.onerror = function () {
+                    rej(new Error("读取图片失败：" + item.file.name));
+                  };
+                  r.readAsDataURL(item.file);
+                });
+                await ghPutFile(t, imgDir + item.name, data, "导入笔记图片：" + item.name);
+                imgCount++;
+              }
+              await ghPutFile(t, "src/content/notes/" + fname, b64(body), "导入随手记：" + base);
+              okCount++;
+            }
+            toast(
+              "已导入 " + okCount + " 篇随手记" + (imgCount ? "、" + imgCount + " 张图片" : "") + "，构建后生效"
+            );
+            setTimeout(function () {
+              location.reload();
+            }, 1500);
+          } catch (err) {
+            alert("导入失败：" + ((err && err.message) || err));
+          }
+        }
 
         function injectImport() {
           if (collection() !== "notes") {
             var oldImp = document.getElementById("qa-import-notes");
             if (oldImp) oldImp.remove();
+            var oldFld = document.getElementById("qa-import-folder");
+            if (oldFld) oldFld.remove();
             return;
           }
           if (document.getElementById("qa-import-notes")) return;
@@ -1466,13 +1508,24 @@
           btn.type = "button";
           btn.className = "qa-import-pill";
           btn.textContent = "📎 导入笔记";
-          btn.title =
-            "选择本地 .md / .txt 笔记（可 Ctrl 多选）；如笔记带图片，请把引用的图片文件一并选中，会自动上传并改写路径";
+          btn.title = "选择一个或多个 .md / .txt 文件导入（带图片的笔记建议用旁边的「📁 导入文件夹」）";
           btn.addEventListener("click", function () {
             noteInput.click();
           });
           if (anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor.nextSibling);
           else anchor.parentElement.appendChild(btn);
+          // 文件夹导入按钮：推荐用法，选笔记所在文件夹自动带图片
+          var folderBtn = document.createElement("button");
+          folderBtn.id = "qa-import-folder";
+          folderBtn.type = "button";
+          folderBtn.className = "qa-import-pill";
+          folderBtn.textContent = "📁 导入文件夹";
+          folderBtn.title =
+            "推荐：选择笔记所在文件夹（Typora 结构：笔记.md + 笔记.assets/ 图片夹），自动上传图片并改写引用";
+          folderBtn.addEventListener("click", function () {
+            noteFolderInput.click();
+          });
+          if (btn.parentElement) btn.parentElement.insertBefore(folderBtn, btn.nextSibling);
         }
 
         // 资料集合的媒体库弹窗：隐藏「媒体资源」旧文件列表，自动停在「上传新的」
