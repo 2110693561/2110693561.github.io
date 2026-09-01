@@ -150,7 +150,8 @@ h1, h2, h3, h4 { line-height: 1.3; }
 }
 .collapse-section[open] > summary h2::before { transform: rotate(90deg); }
 .collapse-section > summary:hover h2 { color: var(--accent); }
-.collapse-section[open] .timeline { animation: section-fade 0.25s ease; }
+.collapse-section[open] .timeline,
+.collapse-section[open] .grid { animation: section-fade 0.25s ease; }
 @keyframes section-fade {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: none; }

@@ -59,31 +59,40 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
         return (
           <div class="card file-card">
             <div class="file-head">
-              <h3>{f.data.title}</h3>
-              <p class="desc">
-                {fmtDate(f.data.date)}
-                {f.data.description ? " · " + f.data.description : ""}
-              </p>
+              <div class="file-head-text">
+                <h3>{f.data.title}</h3>
+                <p class="desc">
+                  {fmtDate(f.data.date)}
+                  {f.data.description ? " · " + f.data.description : ""}
+                </p>
+              </div>
+              {urls.length > 0 && (
+                <button class="file-fold-btn" type="button">
+                  展开预览 ({urls.length})
+                </button>
+              )}
             </div>
-            {urls.map((u) => {
-              const kind = kindOf(u);
-              return (
-                <div class="file-item">
-                  <div class="file-row">
-                    <span class="file-badge">{(extOf(u) || "file").toUpperCase()}</span>
-                    <span class="file-name" title={nameOf(u)}>
-                      {nameOf(u)}
-                    </span>
-                    <div class="file-actions">
-                      <a class="btn" href={u} target="_blank" rel="noopener" download>
-                        下载
-                      </a>
+            <div class="file-fold" data-collapsed>
+              {urls.map((u) => {
+                const kind = kindOf(u);
+                return (
+                  <div class="file-item">
+                    <div class="file-row">
+                      <span class="file-badge">{(extOf(u) || "file").toUpperCase()}</span>
+                      <span class="file-name" title={nameOf(u)}>
+                        {nameOf(u)}
+                      </span>
+                      <div class="file-actions">
+                        <a class="btn" href={u} target="_blank" rel="noopener" download>
+                          下载
+                        </a>
+                      </div>
                     </div>
+                    {kind !== "file" && <div class="file-inline" data-url={u} data-kind={kind} />}
                   </div>
-                  {kind !== "file" && <div class="file-inline" data-url={u} data-kind={kind} />}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         );
       })
@@ -199,9 +208,28 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
       }
     }
 
-    // 页面加载后自动内嵌预览所有可直接显示的文件
-    document.querySelectorAll<HTMLElement>(".file-inline").forEach((box) => {
-      fillPreview(box.dataset.kind!, box.dataset.url!, box);
+    // 折叠交互：默认收起附件与预览区，展开时才首次加载预览（避免打开页面就拉取全部 PDF/文本）
+    document.querySelectorAll<HTMLElement>(".file-card").forEach((card) => {
+      const fold = card.querySelector<HTMLElement>(".file-fold");
+      const btn = card.querySelector<HTMLButtonElement>(".file-fold-btn");
+      if (!fold || !btn) return;
+      let loaded = false;
+      btn.addEventListener("click", () => {
+        const collapsed = fold.hasAttribute("data-collapsed");
+        if (collapsed) {
+          if (!loaded) {
+            loaded = true;
+            fold.querySelectorAll<HTMLElement>(".file-inline").forEach((box) =>
+              fillPreview(box.dataset.kind!, box.dataset.url!, box)
+            );
+          }
+          fold.removeAttribute("data-collapsed");
+          btn.textContent = "收起";
+        } else {
+          fold.setAttribute("data-collapsed", "");
+          btn.textContent = `展开预览 (${fold.querySelectorAll(".file-item").length})`;
+        }
+      });
     });
 
     document.getElementById("file-modal-close")!.addEventListener("click", closeModal);
@@ -220,8 +248,16 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
     flex-direction: column;
     gap: 12px;
   }
-  .file-card {
+  .file-list .file-card {
     padding: 14px 18px;
+    /* 提高特异性并限定本页：覆盖 global.css 中首页资料卡片的横排 flex 样式 */
+    display: block;
+  }
+  .file-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
   }
   .file-head h3 {
     margin: 0;
@@ -231,6 +267,24 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
     margin: 2px 0 0;
     font-size: 13px;
     color: var(--muted);
+  }
+  /* 折叠：默认收起附件与预览区，与随手记折叠按钮同风格 */
+  .file-fold[data-collapsed] {
+    display: none;
+  }
+  .file-fold-btn {
+    flex: none;
+    margin-top: 2px;
+    border: none;
+    background: none;
+    padding: 2px 0;
+    font-size: 13.5px;
+    color: var(--accent-strong);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .file-fold-btn:hover {
+    text-decoration: underline;
   }
   .file-item {
     padding: 8px 0 0;

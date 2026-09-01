@@ -67,13 +67,15 @@ const files = fs
     </div>
   </section>
 
-  <div class="section-head">
-    <h2>最新文章</h2>
-    <a class="more" href={`${base}posts/`}>全部文章 →</a>
-  </div>
-  <div class="grid">
-    {posts.map((p) => <PostCard post={p} />)}
-  </div>
+  <details class="collapse-section">
+    <summary class="section-head">
+      <h2>最新文章</h2>
+      <a class="more" href={`${base}posts/`}>全部文章 →</a>
+    </summary>
+    <div class="grid">
+      {posts.map((p) => <PostCard post={p} />)}
+    </div>
+  </details>
 
   {
     preparedNotes.length > 0 && (
@@ -98,11 +100,11 @@ const files = fs
 
   {
     files.length > 0 && (
-      <>
-        <div class="section-head">
+      <details class="collapse-section">
+        <summary class="section-head">
           <h2>资料</h2>
           <a class="more" href={`${base}files/`}>全部资料 →</a>
-        </div>
+        </summary>
         <div class="grid">
           {files.map((f) => {
             const img = f.atts.find((u) => IMG_EXT.includes((u.split("?")[0].split(".").pop() ?? "").toLowerCase()));
@@ -124,7 +126,7 @@ const files = fs
             );
           })}
         </div>
-      </>
+      </details>
     )
   }
 </BaseLayout>
