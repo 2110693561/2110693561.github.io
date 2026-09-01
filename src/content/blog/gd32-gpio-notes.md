@@ -8,6 +8,8 @@ tags:
   - GPIO
   - 外设
 draft: false
+hidden: true
+
 ---
 
 记录 GD32 GPIO 的学习笔记，以 GD32F4xx 系列为例。
