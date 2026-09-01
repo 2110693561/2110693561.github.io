@@ -175,23 +175,23 @@
         }
       }
       /* ---------- 明暗主题切换按钮（JS 注入，写入与前台相同的主题键） ---------- */
-      #theme-toggle,
-      #qa-import-notes-side {
-        display: flex;
+      /* 随手记二级列表页的「导入笔记」胶囊按钮 */
+      .qa-import-pill {
+        display: inline-flex;
         align-items: center;
-        margin: 0 16px 12px;
-        padding: 6px 14px;
+        gap: 6px;
+        margin-right: 10px;
+        padding: 7px 16px;
         border-radius: 999px;
         border: 1px solid var(--border);
         background: var(--panel);
         color: var(--muted) !important;
-        font-size: 13px;
+        font-size: 13.5px;
         font-weight: 600;
         cursor: pointer;
         transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
       }
-      #theme-toggle:hover,
-      #qa-import-notes-side:hover {
+      .qa-import-pill:hover {
         background: #eceef4;
         border-color: #c6ccdb;
         color: var(--text) !important;
@@ -491,25 +491,6 @@
           }
           var tb = document.getElementById("theme-toggle");
           if (tb) tb.textContent = document.documentElement.dataset.theme === "dark" ? "☀ 切换白天" : "🌙 切换夜间";
-
-          // 侧边栏常驻「导入笔记」：点它从本地选 md/txt 导入为随手记
-          if (!document.getElementById("qa-import-notes-side")) {
-            var ib = document.createElement("button");
-            ib.type = "button";
-            ib.id = "qa-import-notes-side";
-            ib.title = "从本地选择 .md / .txt 文件（可多选）导入为随手记；需先进入「随手记」页面";
-            ib.textContent = "📚 导入笔记";
-            ib.addEventListener("click", function () {
-              if (window.location.hash.indexOf("collections/notes") === -1) {
-                alert("请先在侧边栏进入「随手记」，再点此导入。");
-                return;
-              }
-              if (window.__qaImportNotes) window.__qaImportNotes();
-              else alert("导入组件未就绪，请稍候重试。");
-            });
-            if (tb) host.insertBefore(ib, tb.nextSibling);
-            else host.appendChild(ib);
-          }
         }
 
         var pending = null;
@@ -1357,10 +1338,6 @@
         noteInput.multiple = true;
         noteInput.accept = ".md,.markdown,.txt";
         noteInput.style.display = "none";
-        // 暴露给侧边栏「📚 导入笔记」按钮调用
-        window.__qaImportNotes = function () {
-          noteInput.click();
-        };
         noteInput.addEventListener("change", function () {
           var fl = Array.prototype.slice.call(noteInput.files);
           noteInput.value = "";
@@ -1409,39 +1386,14 @@
             return;
           }
           if (document.getElementById("qa-import-notes")) return;
-          var anchor = null;
-          var cands = document.querySelectorAll("#nc-root button, #nc-root a");
-          // 依次尝试：+ 随手记 → 含“随手记”的短按钮 → 含“新建/新增”的按钮
-          for (var i = 0; i < cands.length; i++) {
-            var txt = (cands[i].textContent || "").trim();
-            if (/^\+\s*随手记$/.test(txt)) {
-              anchor = cands[i];
-              break;
-            }
-          }
-          if (!anchor) {
-            for (var j = 0; j < cands.length; j++) {
-              var t2 = (cands[j].textContent || "").trim();
-              if (t2 && t2.indexOf("随手记") !== -1 && t2.length <= 15) {
-                anchor = cands[j];
-                break;
-              }
-            }
-          }
-          if (!anchor) {
-            for (var k = 0; k < cands.length; k++) {
-              var t3 = (cands[k].textContent || "").trim();
-              if (/^(新建|新增|\+)/.test(t3) && t3.length <= 15) {
-                anchor = cands[k];
-                break;
-              }
-            }
-          }
+          // 锚点用确定性的「新建」链接（指向 #/collections/notes/new）
+          var anchor = document.querySelector('#nc-root a[href*="collections/notes/new"]');
           if (!anchor) return;
           var btn = document.createElement("button");
           btn.id = "qa-import-notes";
           btn.type = "button";
-          btn.textContent = "导入笔记";
+          btn.className = "qa-import-pill";
+          btn.textContent = "📎 导入笔记";
           btn.title = "选择本地 .md / .txt 笔记文件（可 Ctrl 多选），自动导入为随手记；文件名即标题";
           btn.addEventListener("click", function () {
             noteInput.click();
