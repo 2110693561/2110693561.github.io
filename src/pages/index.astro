@@ -7,6 +7,8 @@ import { experimental_AstroContainer as AstroContainer } from "astro/container";
 import { encryptForBrowser } from "../utils/encrypt";
 import { getSortedPosts } from "../utils/posts";
 import { SITE } from "../config";
+import fs from "node:fs";
+import path from "node:path";
 
 const posts = (await getSortedPosts()).slice(0, 6);
 
@@ -29,6 +31,30 @@ const preparedNotes = await Promise.all(
 );
 
 const base = import.meta.env.BASE_URL;
+
+// 资料：读取 src/files/*.md（排除隐藏），取最新 4 条用于主页缩略图展示
+const IMG_EXT = ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico"];
+const normUrl = (u: string) => u.replace(/^["']|["']$/g, "").replace(/^\/?public\//, "/");
+const files = fs
+  .readdirSync(path.resolve("src/files"))
+  .filter((f) => f.endsWith(".md"))
+  .map((f) => {
+    const fm = (fs.readFileSync(path.resolve("src/files", f), "utf8").match(/^---\r?\n([\s\S]*?)\r?\n---/) ?? [])[1] ?? "";
+    const val = (k: string) => fm.match(new RegExp("^" + k + ":\\s*(.*)$", "m"))?.[1]?.trim() ?? "";
+    const atts = [
+      ...[...fm.matchAll(/(?:^|\n)\s*-\s*file:\s*([^\n]+)/g)].map((m) => normUrl(m[1])),
+      ...(val("attachment") ? [normUrl(val("attachment"))] : []),
+    ];
+    return {
+      title: val("title") || f.replace(/\.md$/, ""),
+      date: val("date"),
+      hidden: /^true$/i.test(val("hidden")),
+      atts: [...new Set(atts)],
+    };
+  })
+  .filter((x) => !x.hidden)
+  .sort((a, b) => (a.date < b.date ? 1 : -1))
+  .slice(0, 4);
 ---
 
 <BaseLayout>
@@ -65,6 +91,38 @@ const base = import.meta.env.BASE_URL;
           {preparedNotes.map(({ n, html, payload }) => (
             <NoteCard note={n} html={html} payload={payload} />
           ))}
+        </div>
+      </>
+    )
+  }
+
+  {
+    files.length > 0 && (
+      <>
+        <div class="section-head">
+          <h2>资料</h2>
+          <a class="more" href={`${base}files/`}>全部资料 →</a>
+        </div>
+        <div class="grid">
+          {files.map((f) => {
+            const img = f.atts.find((u) => IMG_EXT.includes((u.split("?")[0].split(".").pop() ?? "").toLowerCase()));
+            const firstExt = (f.atts[0]?.split("?")[0].split(".").pop() ?? "file").toUpperCase();
+            return (
+              <a class="card file-card" href={`${base}files/`}>
+                {img ? (
+                  <img class="file-thumb" src={img} alt={f.title} loading="lazy" />
+                ) : (
+                  <span class="file-thumb-placeholder">{firstExt}</span>
+                )}
+                <div class="file-card-body">
+                  <h3>{f.title}</h3>
+                  <p>
+                    {f.atts.length} 个文件{f.date ? ` · ${f.date}` : ""}
+                  </p>
+                </div>
+              </a>
+            );
+          })}
         </div>
       </>
     )

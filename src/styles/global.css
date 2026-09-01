@@ -139,6 +139,29 @@ h1, h2, h3, h4 { line-height: 1.3; }
 
 /* ================= 卡片 ================= */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+/* 主页资料卡片：缩略图 + 标题 */
+.file-card { padding: 0; overflow: hidden; }
+.file-card .file-thumb {
+  display: block;
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  border-bottom: 1px solid var(--border);
+}
+.file-card .file-thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 150px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border);
+}
+.file-card .file-card-body { padding: 14px 18px 16px; }
+.file-card h3 { margin: 0 0 4px; font-size: 16px; }
+.file-card p { margin: 0; font-size: 13px; color: var(--muted); }
 .card {
   display: block;
   background: var(--card);
