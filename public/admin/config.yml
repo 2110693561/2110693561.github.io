@@ -167,5 +167,7 @@ collections:
       - name: attachment
         label: 文件
         widget: file
-        hint: 上传本地任意文件（md / pdf / zip / 图片等），也可从媒体库选择已有文件；上传后点击文件名可复制访问链接
+        choose_url: true
+        required: true
+        hint: 点「选择文件」→ 切到「上传新的」标签页 → 从电脑选择任意文件（md / pdf / zip / word / 图片均可）；也可直接把文件拖进弹窗，或切「链接」标签页粘贴文件网址
       - { name: description, label: 说明（可选）, widget: text, required: false }

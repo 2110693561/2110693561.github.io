@@ -174,6 +174,26 @@
           font-size: 12px;
         }
       }
+      /* ---------- 明暗主题切换按钮（JS 注入，写入与前台相同的主题键） ---------- */
+      #theme-toggle {
+        display: flex;
+        align-items: center;
+        margin: 0 16px 12px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--muted) !important;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      }
+      #theme-toggle:hover {
+        background: #eceef4;
+        border-color: #c6ccdb;
+        color: var(--text) !important;
+      }
 
       /* ---------- 「暂存草稿」按钮（注入在编辑器「保存」按钮左侧） ---------- */
       #save-draft-btn {
@@ -305,7 +325,12 @@
         color: var(--text) !important;
       }
       html[data-theme="dark"] #back-to-blog:hover {
-        background: #2b3450;
+        background: #232a3b;
+      }
+      html[data-theme="dark"] #theme-toggle:hover {
+        background: #232a3b;
+        border-color: #3c455e;
+        color: var(--text) !important;
       }
       html[data-theme="dark"] #save-draft-btn {
         background: #1a212e;
@@ -320,7 +345,7 @@
       }
     </style>
     <script>
-      // 与前台共用 localStorage["theme"]：前台切夜间，后台自动跟随
+      // 与前台共用 localStorage["theme"]：前台切夜间，后台自动跟随；也可在后台直接切换并写回
       (function () {
         function applyTheme() {
           var saved = null;
@@ -333,6 +358,14 @@
               window.matchMedia("(prefers-color-scheme: dark)").matches;
           document.documentElement.dataset.theme = dark ? "dark" : "light";
         }
+        window.__setTheme = function (next) {
+          try {
+            localStorage.setItem("theme", next);
+          } catch (e) {}
+          document.documentElement.dataset.theme = next;
+          var btn = document.getElementById("theme-toggle");
+          if (btn) btn.textContent = next === "dark" ? "☀ 切换白天" : "🌙 切换夜间";
+        };
         applyTheme();
         window.addEventListener("storage", function (e) {
           if (!e || e.key === "theme") applyTheme();
@@ -364,15 +397,30 @@
         }
 
         function ensure() {
-          if (document.getElementById("back-to-blog")) return;
           var host = sidebar() || document.querySelector('[class*="appBar" i]');
           if (!host) return;
-          var a = document.createElement("a");
-          a.id = "back-to-blog";
-          a.href = SITE_URL;
-          a.title = "打开博客首页";
-          a.textContent = "← 回到主页";
-          host.insertBefore(a, host.firstChild);
+          if (!document.getElementById("back-to-blog")) {
+            var a = document.createElement("a");
+            a.id = "back-to-blog";
+            a.href = SITE_URL;
+            a.title = "打开博客首页";
+            a.textContent = "← 回到主页";
+            host.insertBefore(a, host.firstChild);
+          }
+          if (!document.getElementById("theme-toggle")) {
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.id = "theme-toggle";
+            btn.title = "切换明暗主题（与博客前台同步）";
+            btn.addEventListener("click", function () {
+              var cur = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+              if (window.__setTheme) window.__setTheme(cur === "dark" ? "light" : "dark");
+            });
+            var back = document.getElementById("back-to-blog");
+            host.insertBefore(btn, back.nextSibling);
+          }
+          var tb = document.getElementById("theme-toggle");
+          if (tb) tb.textContent = document.documentElement.dataset.theme === "dark" ? "☀ 切换白天" : "🌙 切换夜间";
         }
 
         var pending = null;
