@@ -7,7 +7,7 @@ tags:
   - GD32
   - GPIO
   - 外设
-draft: false
+draft: true
 hidden: false
 
 ---
