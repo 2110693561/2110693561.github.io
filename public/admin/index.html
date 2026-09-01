@@ -929,16 +929,18 @@
           Array.prototype.forEach.call(rows, function (a) {
             var slug = decodeURIComponent((a.getAttribute("href") || "").split("/entries/")[1] || "");
             if (!slug) return;
-            var existing = a.querySelector(":scope > .qa-group");
+            // 把按钮挂到行的外层容器（li）上，彻底避免点击按钮触发行链接跳转
+            var host = a.parentElement && a.parentElement.tagName === "LI" ? a.parentElement : a;
+            var existing = host.querySelector(":scope > .qa-group");
             if (existing) return;
-            if (getComputedStyle(a).position === "static") a.style.position = "relative";
+            if (getComputedStyle(host).position === "static") host.style.position = "relative";
             var group = buildGroup(col, slug);
-            a.appendChild(group);
+            host.appendChild(group);
             var key = col + "/" + slug;
             var render = function (entry) {
               if (!entry) return;
               refreshRow(group, entry.state);
-              if (col === "files" && group.isConnected) renderPreview(a, entry);
+              if (col === "files" && group.isConnected) renderPreview(host, entry);
             };
             if (cache[key]) {
               render(cache[key]);
@@ -946,7 +948,7 @@
               // 加载失败也保留按钮（本地代理模式没有 GitHub 令牌，点击时会提示）
               load(col, slug)
                 .then(function (entry) {
-                  if (entry && group.isConnected) render(entry);
+                  if (entry && host.isConnected) render(entry);
                 })
                 .catch(function () {});
             }
