@@ -444,32 +444,6 @@
         start();
       })();
 
-      // 文件型集合（站点设置 / 项目列表）只有一个条目：
-      // 点击侧边栏后自动跳过列表页，直接进入编辑页；
-      // 从编辑页返回时不再弹回，而是导向博客列表（后台主界面），避免死循环
-      (function () {
-        var SINGLE = { settings: "site", projects: "projects" };
-        var lastHash = location.hash;
-        function skip() {
-          var cur = location.hash;
-          var prev = lastHash;
-          lastHash = cur;
-          var m = cur.match(/^#\/collections\/([a-zA-Z_-]+)\/?$/);
-          if (m && SINGLE[m[1]]) {
-            var fromEditor = new RegExp("^#/collections/" + m[1] + "/entries/").test(prev);
-            if (fromEditor) {
-              // 用户在编辑页点了返回：去后台主界面（文章列表），不再弹回编辑器
-              location.replace("#/collections/blog");
-              return;
-            }
-            location.replace("#/collections/" + m[1] + "/entries/" + SINGLE[m[1]]);
-          }
-        }
-        window.addEventListener("hashchange", skip);
-        // 兜底：Decap 内部路由偶尔不触发 hashchange，用轻量轮询补上
-        setInterval(skip, 400);
-      })();
-
       // 「暂存草稿」按钮：一键把当前文章/随手记标记为草稿并保存（提交到仓库，但网站不显示）
       // 仅在含「草稿」开关的编辑页出现；想发布时关掉草稿开关再点「保存」即可
       (function () {
