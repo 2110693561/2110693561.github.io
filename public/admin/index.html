@@ -1357,7 +1357,7 @@
         var noteInput = document.createElement("input");
         noteInput.type = "file";
         noteInput.multiple = true;
-        noteInput.accept = ".md,.markdown,.txt";
+        noteInput.accept = ".md,.markdown,.txt,.png,.jpg,.jpeg,.gif,.webp,.svg,.bmp";
         noteInput.style.display = "none";
         noteInput.addEventListener("change", function () {
           var fl = Array.prototype.slice.call(noteInput.files);
@@ -1369,11 +1369,24 @@
               alert("导入需要登录令牌，请退出后台重新登录");
               return;
             }
+            var IMG = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
+            var mds = fl.filter(function (f) {
+              return !IMG.test(f.name);
+            });
+            var imgs = fl.filter(function (f) {
+              return IMG.test(f.name);
+            });
+            // 图片按文件名建索引（不区分大小写），供 markdown 路径改写
+            var imgMap = {};
+            imgs.forEach(function (im) {
+              imgMap[im.name.toLowerCase()] = im;
+            });
             try {
               var okCount = 0;
-              for (var i = 0; i < fl.length; i++) {
-                var f = fl[i];
-                toast("导入中 " + (i + 1) + "/" + fl.length + "：" + f.name);
+              var imgCount = 0;
+              for (var i = 0; i < mds.length; i++) {
+                var f = mds[i];
+                toast("导入中 " + (i + 1) + "/" + mds.length + "：" + f.name);
                 var raw = await f.text();
                 // 文件本身带 frontmatter 的原样导入，否则补上标题和日期
                 var hasFm = /^\uFEFF?---\s*\r?\n/.test(raw);
@@ -1387,10 +1400,45 @@
                     "\ntags: []\n---\n\n" +
                     raw;
                 var fname = Date.now().toString(36) + "-" + i + "-" + safeName(base) + ".md";
+                // 笔记引用的图片：上传到 public/images/notes/<slug>/ 并改写路径
+                var imgDir = "public/images/notes/" + safeName(base) + "/";
+                var uploaded = {};
+                body = body.replace(
+                  /(!\[[^\]]*\]\()([^)\s]+)(\))/g,
+                  function (m, pre, path, post) {
+                    var bn = path.split("/").pop().split("?")[0];
+                    var hit = imgMap[bn.toLowerCase()];
+                    if (!hit) return m;
+                    var newName = safeName(bn.replace(IMG, "")) + (bn.match(IMG) || [""])[0].toLowerCase();
+                    var url = "/images/notes/" + safeName(base) + "/" + newName;
+                    uploaded[bn.toLowerCase()] = { file: hit, name: newName };
+                    return pre + url + post;
+                  }
+                );
+                // 先传图片（同名只传一次），再传笔记
+                var keys = Object.keys(uploaded);
+                for (var u = 0; u < keys.length; u++) {
+                  var item = uploaded[keys[u]];
+                  toast("上传图片 " + (u + 1) + "/" + keys.length + "：" + item.name);
+                  var data = await new Promise(function (res, rej) {
+                    var r = new FileReader();
+                    r.onload = function () {
+                      res(String(r.result).split(",")[1]);
+                    };
+                    r.onerror = function () {
+                      rej(new Error("读取图片失败：" + item.file.name));
+                    };
+                    r.readAsDataURL(item.file);
+                  });
+                  await ghPutFile(t, imgDir + item.name, data, "导入笔记图片：" + item.name);
+                  imgCount++;
+                }
                 await ghPutFile(t, "src/content/notes/" + fname, b64(body), "导入随手记：" + base);
                 okCount++;
               }
-              toast("已导入 " + okCount + " 篇随手记，构建后生效");
+              toast(
+                "已导入 " + okCount + " 篇随手记" + (imgCount ? "、" + imgCount + " 张图片" : "") + "，构建后生效"
+              );
               setTimeout(function () {
                 location.reload();
               }, 1500);
@@ -1415,7 +1463,8 @@
           btn.type = "button";
           btn.className = "qa-import-pill";
           btn.textContent = "📎 导入笔记";
-          btn.title = "选择本地 .md / .txt 笔记文件（可 Ctrl 多选），自动导入为随手记；文件名即标题";
+          btn.title =
+            "选择本地 .md / .txt 笔记（可 Ctrl 多选）；如笔记带图片，请把引用的图片文件一并选中，会自动上传并改写路径";
           btn.addEventListener("click", function () {
             noteInput.click();
           });
