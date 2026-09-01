@@ -354,6 +354,32 @@ a.card:hover h3 { color: var(--accent); }
 .note-head time { color: var(--muted); font-size: 13px; font-family: ui-monospace, Consolas, monospace; }
 .note-content { font-size: 15px; }
 .note-content p { margin: 0.45em 0; }
+
+/* 随手记折叠：默认只显示开头，点击「展开全文」查看全部 */
+.note-fold { position: relative; }
+.note-fold[data-collapsed] .note-content { max-height: 150px; overflow: hidden; }
+.note-fold[data-collapsed]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 30px;
+  height: 56px;
+  background: linear-gradient(transparent, var(--card));
+  pointer-events: none;
+}
+.note-fold-btn {
+  position: relative;
+  margin-top: 6px;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font-size: 13.5px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-family: inherit;
+}
+.note-fold-btn:hover { text-decoration: underline; }
 .note-content code {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 0.88em;

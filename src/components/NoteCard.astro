@@ -32,8 +32,35 @@ const base = import.meta.env.BASE_URL;
         编辑
       </a>
     </div>
-    <div class="note-content">
-      {payload ? <LockedContent payload={payload} /> : <Fragment set:html={html} />}
+    <div class="note-fold" data-collapsed>
+      <div class="note-content">
+        {payload ? <LockedContent payload={payload} /> : <Fragment set:html={html} />}
+      </div>
+      <button class="note-fold-btn" type="button" hidden>展开全文</button>
     </div>
   </div>
 </article>
+
+<script>
+  // 随手记默认只显示开头，点击「展开全文」查看全部；内容较短则直接完整显示
+  document.querySelectorAll(".note-fold").forEach((box) => {
+    const content = box.querySelector(".note-content");
+    const btn = box.querySelector(".note-fold-btn");
+    if (!content || !btn) return;
+    if (content.scrollHeight <= 150) {
+      box.removeAttribute("data-collapsed");
+      return;
+    }
+    btn.hidden = false;
+    btn.addEventListener("click", () => {
+      if (box.hasAttribute("data-collapsed")) {
+        box.removeAttribute("data-collapsed");
+        btn.textContent = "收起";
+      } else {
+        box.setAttribute("data-collapsed", "");
+        btn.textContent = "展开全文";
+        box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    });
+  });
+</script>
