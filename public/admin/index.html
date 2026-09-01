@@ -1164,6 +1164,23 @@
           if (anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor);
         }
 
+        // 资料集合的媒体库弹窗：隐藏「媒体资源」旧文件列表，自动停在「上传新的」
+        function tameMediaLibrary() {
+          if (collection() !== "files") return;
+          var nodes = document.querySelectorAll(
+            '#nc-root button, #nc-root [role="tab"], #nc-root [class*="tab" i]'
+          );
+          var uploadTab = null;
+          var assetsTab = null;
+          for (var i = 0; i < nodes.length; i++) {
+            var t = (nodes[i].textContent || "").trim();
+            if (t === "上传新的" || /^upload new$/i.test(t)) uploadTab = nodes[i];
+            else if (t === "媒体资源" || /^media assets$/i.test(t)) assetsTab = nodes[i];
+          }
+          if (assetsTab) assetsTab.style.display = "none";
+          if (uploadTab && uploadTab.offsetParent !== null) uploadTab.click();
+        }
+
         var pending = null;
         var mo = new MutationObserver(function () {
           if (pending) return;
@@ -1171,6 +1188,7 @@
             pending = null;
             ensure();
             injectUpload();
+            tameMediaLibrary();
           }, 300);
         });
         function start() {
@@ -1181,10 +1199,12 @@
               setTimeout(function () {
                 ensure();
                 injectUpload();
+                tameMediaLibrary();
               }, 400);
             });
             ensure();
             injectUpload();
+            tameMediaLibrary();
           } else {
             setTimeout(start, 60);
           }
