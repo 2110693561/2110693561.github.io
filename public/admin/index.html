@@ -175,7 +175,8 @@
         }
       }
       /* ---------- 明暗主题切换按钮（JS 注入，写入与前台相同的主题键） ---------- */
-      #theme-toggle {
+      #theme-toggle,
+      #qa-import-notes-side {
         display: flex;
         align-items: center;
         margin: 0 16px 12px;
@@ -189,7 +190,8 @@
         cursor: pointer;
         transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
       }
-      #theme-toggle:hover {
+      #theme-toggle:hover,
+      #qa-import-notes-side:hover {
         background: #eceef4;
         border-color: #c6ccdb;
         color: var(--text) !important;
@@ -489,6 +491,25 @@
           }
           var tb = document.getElementById("theme-toggle");
           if (tb) tb.textContent = document.documentElement.dataset.theme === "dark" ? "☀ 切换白天" : "🌙 切换夜间";
+
+          // 侧边栏常驻「导入笔记」：点它从本地选 md/txt 导入为随手记
+          if (!document.getElementById("qa-import-notes-side")) {
+            var ib = document.createElement("button");
+            ib.type = "button";
+            ib.id = "qa-import-notes-side";
+            ib.title = "从本地选择 .md / .txt 文件（可多选）导入为随手记；需先进入「随手记」页面";
+            ib.textContent = "📚 导入笔记";
+            ib.addEventListener("click", function () {
+              if (window.location.hash.indexOf("collections/notes") === -1) {
+                alert("请先在侧边栏进入「随手记」，再点此导入。");
+                return;
+              }
+              if (window.__qaImportNotes) window.__qaImportNotes();
+              else alert("导入组件未就绪，请稍候重试。");
+            });
+            if (tb) host.insertBefore(ib, tb.nextSibling);
+            else host.appendChild(ib);
+          }
         }
 
         var pending = null;
@@ -1336,6 +1357,10 @@
         noteInput.multiple = true;
         noteInput.accept = ".md,.markdown,.txt";
         noteInput.style.display = "none";
+        // 暴露给侧边栏「📚 导入笔记」按钮调用
+        window.__qaImportNotes = function () {
+          noteInput.click();
+        };
         noteInput.addEventListener("change", function () {
           var fl = Array.prototype.slice.call(noteInput.files);
           noteInput.value = "";
