@@ -390,12 +390,23 @@
       })();
 
       // 文件型集合（站点设置 / 项目列表）只有一个条目：
-      // 点击侧边栏后自动跳过列表页，直接进入编辑页
+      // 点击侧边栏后自动跳过列表页，直接进入编辑页；
+      // 从编辑页返回时不再弹回，而是导向博客列表（后台主界面），避免死循环
       (function () {
         var SINGLE = { settings: "site", projects: "projects" };
+        var lastHash = location.hash;
         function skip() {
-          var m = location.hash.match(/^#\/collections\/([a-zA-Z_-]+)\/?$/);
+          var cur = location.hash;
+          var prev = lastHash;
+          lastHash = cur;
+          var m = cur.match(/^#\/collections\/([a-zA-Z_-]+)\/?$/);
           if (m && SINGLE[m[1]]) {
+            var fromEditor = new RegExp("^#/collections/" + m[1] + "/entries/").test(prev);
+            if (fromEditor) {
+              // 用户在编辑页点了返回：去后台主界面（文章列表），不再弹回编辑器
+              location.replace("#/collections/blog");
+              return;
+            }
             location.replace("#/collections/" + m[1] + "/entries/" + SINGLE[m[1]]);
           }
         }
