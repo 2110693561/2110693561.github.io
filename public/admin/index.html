@@ -262,6 +262,44 @@
         border-color: #dc2626;
         background: #fef2f2;
       }
+      /* ---------- 资料上传列表的内嵌缩略图 ---------- */
+      #nc-root .qa-preview {
+        position: absolute;
+        right: 190px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 45%;
+        overflow: hidden;
+        z-index: 4;
+      }
+      #nc-root .qa-preview img {
+        height: 52px;
+        max-width: 90px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: #fff;
+        cursor: zoom-in;
+      }
+      #nc-root .qa-chip {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 4px 8px;
+        border-radius: 6px;
+        background: var(--accent-soft);
+        color: var(--accent-strong) !important;
+        text-decoration: none;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+      }
+      #nc-root .qa-more {
+        font-size: 12px;
+        color: var(--muted) !important;
+        white-space: nowrap;
+      }
       #nc-root .qa-toast {
         position: fixed;
         left: 50%;
@@ -633,9 +671,25 @@
             var json = await res.json();
             var text = json.encoding === "base64" ? unb64(json.content) : json.content;
             var m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-            var state = { draft: false, hidden: false, password: "", title: "" };
+            var state = { draft: false, hidden: false, password: "", title: "", attachments: [] };
             if (m) {
               state = parseState(m[1]);
+              if (col === "files") {
+                // 资料：从 frontmatter 提取附件列表（兼容旧版单文件 attachment 字段）
+                var atts = [];
+                var legacy = m[1].match(/^attachment:\s*([^\n]+)$/m);
+                if (legacy)
+                  atts.push(
+                    legacy[1].trim().replace(/^["']|["']$/g, "").replace(/^\/?public\//, "/")
+                  );
+                var re = /(^|\n)\s*-\s*file:\s*([^\n]+)/g;
+                var mm;
+                while ((mm = re.exec(m[1])) !== null) {
+                  var u = mm[2].trim().replace(/^["']|["']$/g, "").replace(/^\/?public\//, "/");
+                  if (atts.indexOf(u) < 0) atts.push(u);
+                }
+                state.attachments = atts;
+              }
             } else if (col === "annotations") {
               // 批注：标题取 post 字段，用于「原文」跳转与删除确认
               try {
@@ -746,6 +800,12 @@
               { k: "open", label: "原文", title: "跳转到这篇批注所在的文章" },
               { k: "delete", label: "删除", title: "删除：从仓库删除这个批注文件，不可恢复" },
             ];
+          } else if (col === "files") {
+            // 资料：隐藏 + 删除（内容预览由缩略图直接展示）
+            defs = [
+              { k: "hidden", label: "隐藏", title: "隐藏：不在资料页显示" },
+              { k: "delete", label: "删除", title: "删除：从仓库删除这条资料记录，不可恢复" },
+            ];
           } else {
             defs = [
               { k: "draft", label: "草稿", title: "转草稿：保存但不在网站上发布" },
@@ -820,6 +880,48 @@
           return group;
         }
 
+        // 资料上传列表：把附件渲染成缩略图 / 类型徽标
+        function renderPreview(row, entry) {
+          var prev = row.querySelector(":scope > .qa-preview");
+          if (!prev) {
+            prev = document.createElement("span");
+            prev.className = "qa-preview";
+            row.appendChild(prev);
+          }
+          prev.innerHTML = "";
+          var atts = (entry.state && entry.state.attachments) || [];
+          atts.slice(0, 4).forEach(function (u) {
+            var ext = (u.split("?")[0].split(".").pop() || "").toLowerCase();
+            var isImg = ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico"].indexOf(ext) >= 0;
+            if (isImg) {
+              var img = document.createElement("img");
+              img.src = u;
+              img.loading = "lazy";
+              img.title = "点击查看大图";
+              img.addEventListener("click", function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                window.open(u, "_blank");
+              });
+              prev.appendChild(img);
+            } else {
+              var chip = document.createElement("a");
+              chip.className = "qa-chip";
+              chip.href = u;
+              chip.target = "_blank";
+              chip.rel = "noopener";
+              chip.textContent = (ext || "file").toUpperCase();
+              prev.appendChild(chip);
+            }
+          });
+          if (atts.length > 4) {
+            var more = document.createElement("span");
+            more.className = "qa-more";
+            more.textContent = "+" + (atts.length - 4);
+            prev.appendChild(more);
+          }
+        }
+
         async function ensure() {
           var col = collection();
           if (!col) return;
@@ -833,13 +935,18 @@
             var group = buildGroup(col, slug);
             a.appendChild(group);
             var key = col + "/" + slug;
+            var render = function (entry) {
+              if (!entry) return;
+              refreshRow(group, entry.state);
+              if (col === "files" && group.isConnected) renderPreview(a, entry);
+            };
             if (cache[key]) {
-              refreshRow(group, cache[key].state);
+              render(cache[key]);
             } else {
               // 加载失败也保留按钮（本地代理模式没有 GitHub 令牌，点击时会提示）
               load(col, slug)
                 .then(function (entry) {
-                  if (entry && group.isConnected) refreshRow(group, entry.state);
+                  if (entry && group.isConnected) render(entry);
                 })
                 .catch(function () {});
             }
