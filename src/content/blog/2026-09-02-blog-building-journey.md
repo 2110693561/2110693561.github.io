@@ -12,9 +12,9 @@ tags: [Astro, Decap CMS, GitHub Pages, Cloudflare, 踩坑]
 
 先看现在这个站已经有什么：
 
-- **前台**：文章（分类/标签/归档）、随手记时间线、资料预览页、项目展示、全文搜索、RSS、明暗主题、giscus 评论
+- **前台**：文章（分类/标签/归档）、随手记时间线、资料预览页（预览懒加载）、项目展示、全文搜索、RSS、明暗主题、giscus 评论、全站折叠式浏览（首页三个区块 + 每条内容可展开）
 - **后台**（`/admin/`）：完全在网页上写作和管理，不需要本地环境，不需要手动 git
-- **内容管理**：草稿、隐藏、密码加密、批量上传、本地笔记导入、划段批注
+- **内容管理**：草稿、隐藏、密码加密、批量上传、整文件夹上传、本地笔记导入、划段批注
 - **托管成本**：0 元（GitHub Pages + Cloudflare 免费额度）
 
 ## 二、技术栈全景
@@ -199,9 +199,29 @@ hoverBtn.style.top =
 
 ### 5. 资料管理
 
-- 资料条目是 `src/files/` 下的 Markdown，附件存 `public/files/`（加时间戳前缀防重名）
+- 资料条目是 `src/files/` 下的 Markdown，附件存 `public/files/`（单文件批量上传加时间戳前缀防重名）
 - 批量上传：原生文件选择器 Ctrl/Shift 多选 → 逐个上传 → **合并为一次 git 提交** → 刷新列表
-- 预览页 `/files/`：图片直接显示、PDF 用 `embed` 内嵌、Markdown 渲染成页面，其他类型给下载链接
+- **整文件夹上传**：选择一个文件夹，内部所有文件（含子文件夹）合并为一条资料，**保留相对目录结构**——说明文档 `.md` 里的图片相对引用（如 `assets/图1.png`）在预览页渲染时自动正常显示，不用改任何路径：
+
+```js
+// 文件夹上传核心：按「大小分流 + 分批合并提交」
+const big = [], small = [];
+files.forEach((f) => (f.size < 2 * 1048576 ? small : big).push(f));
+// 大文件逐个传（XHR 读实时百分比），422 已存在时自动取 sha 覆盖
+for (const f of big) {
+  const path = `public/files/${base}/${safeRelPath(relPathOf(f, root))}`;
+  await ghPutFileCover(t, path, await b64OfBlob(f), "上传资料：" + f.name, onProgress);
+}
+// 小文件每 15 个合并为一次 commit，避免连续提交触发次级限流
+for (let i = 0; i < small.length; i += 15) {
+  const items = await Promise.all(small.slice(i, i + 15).map(toBlobItem));
+  await ghPutFilesBatch(t, items, "上传资料（批量）：" + base);
+}
+```
+
+  其他细节：自动跳过 `.DS_Store` / `Thumbs.db` 等垃圾文件；重复上传同名文件夹时自动覆盖旧文件而不是报错。
+
+- 预览页 `/files/`：图片直接显示、PDF 内嵌、Markdown 渲染成页面，其他类型给下载链接；**预览区默认收起，展开时才发起加载**（见坑 12）
 - 删除资料时级联删除附件文件，避免媒体库残留孤儿文件
 
 ### 6. 随手记导入
@@ -215,7 +235,7 @@ hoverBtn.style.top =
 
 ### 7. 前台体验
 
-**随手记折叠**：首页区块用原生 `<details>/<summary>` 整体折叠；每条笔记默认只显示开头，`scrollHeight` 判断内容短就直接完整显示，避免出现无意义的按钮：
+**折叠式浏览**：从随手记推广到了全站——首页「最新文章 / 随手记 / 资料」三个区块统一用原生 `<details>/<summary>` 折叠（点击标题栏展开收起，箭头旋转 + 淡入动画，标题栏里的跳转链接 `stopPropagation` 防误触）；每条随手记默认只显示开头，`scrollHeight` 判断内容短就直接完整显示，避免出现无意义的按钮：
 
 ```js
 document.querySelectorAll(".note-fold").forEach((box) => {
@@ -235,6 +255,26 @@ document.querySelectorAll(".note-fold").forEach((box) => {
       btn.textContent = "展开全文";
     }
   });
+});
+```
+
+**资料页懒加载**：每份资料的附件与预览区默认收起（卡片只剩标题行 + 「展开预览 (N)」按钮），**展开时才首次加载** PDF iframe / 拉取文本——首屏不再发一堆请求，页面从「无限长」变成一屏能览：
+
+```js
+btn.addEventListener("click", () => {
+  if (fold.hasAttribute("data-collapsed")) {
+    if (!loaded) {                          // 首次展开才加载预览
+      loaded = true;
+      fold.querySelectorAll(".file-inline").forEach((box) =>
+        fillPreview(box.dataset.kind, box.dataset.url, box)
+      );
+    }
+    fold.removeAttribute("data-collapsed");
+    btn.textContent = "收起";
+  } else {
+    fold.setAttribute("data-collapsed", "");
+    btn.textContent = `展开预览 (${count})`;
+  }
 });
 ```
 
@@ -323,6 +363,12 @@ CMS.registerPreviewTemplate("notes", MarkdownPreview);
 **原因**：浏览器本地缓存 + CDN 缓存双重叠加，普通刷新不生效。
 **解决**：验证类操作一律 **Ctrl+F5** 硬刷新，或开无痕窗口；写操作请求统一加时间戳参数禁缓存。
 
+### 坑 12：资料页「全量内嵌预览」拖垮页面
+
+**现象**：资料一多，`/files/` 页面变成无限长——每份资料的 PDF iframe、Markdown 全文、图片全部直接铺开，首屏就发几十个请求，找一份资料要滚很久。
+**原因**：页面加载时无条件给所有可预览文件建 `iframe` / `fetch` 内容，既浪费带宽又把页面撑爆。
+**解决**：两层折叠——每份资料卡片默认只剩标题行 + 「展开预览 (N)」，展开时才首次加载预览内容（`loaded` 标记防止重复加载）；首页三个区块同样用 `<details>` 整体折叠。篇幅和性能一起解决。
+
 ## 六、后续优化路线
 
 ### 短期（体验补全）
@@ -355,4 +401,4 @@ CMS.registerPreviewTemplate("notes", MarkdownPreview);
 2. **静态方案的坑主要在「缓存」和「限流」**：CDN 缓存要有等待预期，批量写操作要合并提交
 3. **免费 ≠ 凑合**：GitHub Pages + Cloudflare Worker + 原生前端技术就能做出完成度很高的产品
 
-如果你也想搭一个类似的站，欢迎参考这篇文章的架构和踩坑记录。有问题可以在文章下批注留言，我会收到提醒。
+如果你也想搭一个类似的站，欢迎参考这篇文章的架构和踩坑记录。有问题可以在文章里划词批注，或在底部评论区留言（giscus，GitHub 账号直接登录），我都会收到提醒。
