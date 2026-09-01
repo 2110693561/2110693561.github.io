@@ -45,6 +45,7 @@ collections:
             required: false
             hint: 默认 /favicon.svg；可填图片链接更换
           - { name: github, label: GitHub 主页链接, widget: string, required: false }
+          - { name: repo, label: GitHub 仓库（批注直写用，一般不用改）, widget: string, required: true }
 
   # ---------- 文章 ----------
   - name: blog

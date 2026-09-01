@@ -7,13 +7,15 @@ export function loadAnnotations(): Map<string, Annotation[]> {
   }) as Record<string, { default?: unknown } | unknown>;
 
   const map = new Map<string, Annotation[]>();
-  for (const mod of Object.values(modules)) {
+  for (const [path, mod] of Object.entries(modules)) {
     // Vite 的 JSON 导入可能是 { default: data } 或直接就是数据
     const data = (mod as { default?: unknown }).default ?? mod;
     const items = Array.isArray(data) ? data : [data];
+    const file = path.split("/").pop();
     for (const item of items) {
       const anno = item as Annotation;
       if (!anno || typeof anno.post !== "string") continue;
+      if (file) anno.file = file;
       const list = map.get(anno.post) ?? [];
       list.push(anno);
       map.set(anno.post, list);

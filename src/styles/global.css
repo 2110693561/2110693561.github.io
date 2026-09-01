@@ -403,6 +403,23 @@ a.card:hover h3 { color: var(--accent); }
 }
 .anno-quote { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
 .anno-date { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+.annotation-card { position: relative; }
+.anno-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  line-height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  cursor: pointer;
+}
+.anno-delete:hover { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
 .anno-form {
   margin: 10px 0;
   padding: 12px 14px;

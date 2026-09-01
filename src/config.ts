@@ -21,6 +21,8 @@ export const SITE = {
   favicon: siteData.favicon || "/favicon.svg",
   // GitHub Pages 地址（username.github.io 仓库）
   website: "https://2110693561.github.io",
+  // GitHub 仓库（owner/name），页面批注直写仓库时用
+  repo: siteData.repo,
   // 仓库名为 yourname.github.io 时用 "/"；
   // 仓库名为其他（如 mynote）时改成 "/mynote/"
   base: "/",

@@ -133,14 +133,48 @@ const base = import.meta.env.BASE_URL;
 
 <script>
   // ============ 段落批注 UI ============
-  // 已有批注在段落旁显示；鼠标悬停段落可新增批注（复制 JSON 后到后台保存）
+  // 站长（后台已登录）可直接在页面上保存/删除批注：通过 GitHub API 写入仓库，
+  // 保存后本页立即显示，同时自动 commit 触发构建同步给所有访客（约 1-2 分钟）。
+  import { SITE } from "../../config";
+
+  const REPO = SITE.repo;
+  const BRANCH = "main";
+  const GH = "https://api.github.com";
+
+  type Anno = { post: string; index: number; quote?: string; content: string; date: string; file?: string };
+
+  /** 读取 Decap CMS 登录后留在浏览器里的令牌（站长身份） */
+  const getUserToken = (): string | null => {
+    for (const key of ["decap-cms-user", "netlify-cms-user"]) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const user = JSON.parse(raw) as { token?: unknown };
+        if (user && typeof user.token === "string" && user.token) return user.token;
+      } catch {
+        /* ignore */
+      }
+    }
+    return null;
+  };
+
+  const ghHeaders = (token: string) => ({
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+  });
+
+  /** UTF-8 安全的 base64 */
+  const b64 = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+
   const body = document.getElementById("post-body");
   if (body) {
     const base = import.meta.env.BASE_URL;
     const dataEl = document.getElementById("annotation-data");
-    const annotations: Array<{ post: string; index: number; quote?: string; content: string; date: string }> =
-      dataEl ? JSON.parse(dataEl.textContent || "[]") : [];
+    const annotations: Anno[] = dataEl ? JSON.parse(dataEl.textContent || "[]") : [];
     const blocks = Array.from(body.children) as HTMLElement[];
+
+    // 先给原始段落标记序号（在插入批注卡片前，避免卡片导致索引偏移）
+    blocks.forEach((block, i) => (block.dataset.annoIndex = String(i)));
 
     const findBlock = (anno: { index: number; quote?: string }) => {
       if (anno.quote) {
@@ -150,10 +184,9 @@ const base = import.meta.env.BASE_URL;
       return blocks[anno.index] ?? null;
     };
 
-    // 渲染已有批注
-    for (const anno of annotations) {
+    const renderAnnotation = (anno: Anno) => {
       const anchor = findBlock(anno);
-      if (!anchor) continue;
+      if (!anchor) return null;
       const card = document.createElement("aside");
       card.className = "annotation-card";
       const quote = document.createElement("div");
@@ -167,6 +200,50 @@ const base = import.meta.env.BASE_URL;
       date.textContent = anno.date || "";
       card.append(quote, content, date);
       anchor.insertAdjacentElement("afterend", card);
+      return card;
+    };
+
+    /** 给批注卡片加删除按钮（通过 GitHub API 删除仓库里的 JSON 文件） */
+    const attachDelete = (card: HTMLElement, file: string) => {
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "anno-delete";
+      del.title = "删除这条批注";
+      del.textContent = "×";
+      del.addEventListener("click", async () => {
+        if (!confirm("确定删除这条批注？删除后自动构建生效。")) return;
+        del.disabled = true;
+        try {
+          const token = getUserToken()!;
+          const path = `src/data/annotations/${file}`;
+          const meta = await fetch(`${GH}/repos/${REPO}/contents/${path}?ref=${BRANCH}`, {
+            headers: ghHeaders(token),
+          });
+          if (meta.status !== 404) {
+            if (!meta.ok) throw new Error(`GitHub API ${meta.status}`);
+            const { sha } = (await meta.json()) as { sha: string };
+            const res = await fetch(`${GH}/repos/${REPO}/contents/${path}`, {
+              method: "DELETE",
+              headers: ghHeaders(token),
+              body: JSON.stringify({ message: `删除批注 ${file}`, sha, branch: BRANCH }),
+            });
+            if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+          }
+          card.remove();
+        } catch (err) {
+          del.disabled = false;
+          alert(err instanceof Error && err.message.includes("401") ? "登录已过期，请到后台重新登录后再试。" : `删除失败：${err instanceof Error ? err.message : err}`);
+        }
+      });
+      card.appendChild(del);
+    };
+
+    // 渲染已有批注（站长登录时可删除）
+    const canWrite = !!getUserToken();
+    for (const anno of annotations) {
+      const card = renderAnnotation(anno);
+      if (!card || !canWrite || !anno.file) continue;
+      attachDelete(card, anno.file);
     }
 
     // 悬停出现的「批注」按钮
@@ -178,14 +255,12 @@ const base = import.meta.env.BASE_URL;
     document.body.appendChild(hoverBtn);
 
     let currentBlock: HTMLElement | null = null;
-    let currentIndex = -1;
     let formOpen = false;
 
-    blocks.forEach((block, i) => {
+    blocks.forEach((block) => {
       block.addEventListener("mouseenter", () => {
         if (block.classList.contains("annotation-card") || block.classList.contains("anno-form")) return;
         currentBlock = block;
-        currentIndex = i;
         const rect = block.getBoundingClientRect();
         hoverBtn.style.top = `${Math.max(8, rect.top - 14)}px`;
         hoverBtn.style.left = `${Math.min(rect.right - 10, window.innerWidth - 60)}px`;
@@ -205,23 +280,31 @@ const base = import.meta.env.BASE_URL;
       if (formOpen) return closeForm();
       if (!currentBlock) return;
       formOpen = true;
+      const token = getUserToken();
 
       const form = document.createElement("div");
       form.className = "anno-form";
       form.innerHTML = `
         <textarea placeholder="写点批注…"></textarea>
         <div class="anno-form-actions">
-          <button type="button" class="anno-copy">复制批注 JSON</button>
-          <a class="anno-admin" href="${base}admin/#/collections/annotations/new" target="_blank">去后台保存</a>
+          ${token ? '<button type="button" class="anno-save">保存批注</button>' : ""}
+          <button type="button" class="anno-copy">复制 JSON</button>
+          <a class="anno-admin" href="${base}admin/#/collections/annotations/new" target="_blank">去后台</a>
           <button type="button" class="anno-cancel">取消</button>
         </div>
-        <p class="anno-tip">复制 JSON 后，打开后台 → 段落批注 → 新建，把各字段填入表单保存，网站重新构建后即显示。</p>`;
+        ${
+          token
+            ? '<p class="anno-tip">保存后本页立即显示，并自动提交到仓库触发构建（约 1-2 分钟全站可见）。</p>'
+            : '<p class="anno-tip">直接保存需要站长身份：先在<a href="' + base + 'admin/" target="_blank">后台</a>用 GitHub 登录一次，再回到本页即可。也可以复制 JSON 到后台粘贴保存。</p>'
+        }`;
       currentBlock.insertAdjacentElement("afterend", form);
+
+      form.querySelector(".anno-cancel")!.addEventListener("click", closeForm);
 
       form.querySelector<HTMLButtonElement>(".anno-copy")!.addEventListener("click", async (e) => {
         const payload = {
           post: body.getAttribute("data-post") || "",
-          index: currentIndex,
+          index: Number(currentBlock!.dataset.annoIndex),
           quote: (currentBlock!.textContent || "").trim().slice(0, 60),
           content: form.querySelector<HTMLTextAreaElement>("textarea")!.value.trim(),
           date: new Date().toISOString().slice(0, 10),
@@ -230,10 +313,54 @@ const base = import.meta.env.BASE_URL;
           await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
           e.currentTarget!.textContent = "已复制";
         } catch {
-          e.currentTarget!.textContent = "复制失败，请手动复制";
+          e.currentTarget!.textContent = "复制失败";
         }
       });
-      form.querySelector(".anno-cancel")!.addEventListener("click", closeForm);
+
+      if (!token) return;
+
+      form.querySelector<HTMLButtonElement>(".anno-save")!.addEventListener("click", async (e) => {
+        const btn = e.currentTarget!;
+        const text = form.querySelector<HTMLTextAreaElement>("textarea")!.value.trim();
+        if (!text) return;
+        const anno: Anno = {
+          post: body.getAttribute("data-post") || "",
+          index: Number(currentBlock!.dataset.annoIndex),
+          quote: (currentBlock!.textContent || "").trim().slice(0, 60),
+          content: text,
+          date: new Date().toISOString().slice(0, 10),
+        };
+        anno.file = `${new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14)}${Math.random().toString(16).slice(2, 6)}.json`;
+
+        btn.disabled = true;
+        btn.textContent = "保存中…";
+        try {
+          const res = await fetch(`${GH}/repos/${REPO}/contents/src/data/annotations/${anno.file}`, {
+            method: "PUT",
+            headers: ghHeaders(token),
+            body: JSON.stringify({
+              message: `批注：${anno.post}`,
+              content: b64(JSON.stringify(anno, null, 2) + "\n"),
+              branch: BRANCH,
+            }),
+          });
+          if (res.status === 401 || res.status === 403) {
+            throw new Error("TOKEN_EXPIRED");
+          }
+          if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+          const card = renderAnnotation(anno);
+          if (card) attachDelete(card, anno.file!);
+          closeForm();
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = "保存批注";
+          const tip = form.querySelector<HTMLElement>(".anno-tip")!;
+          tip.textContent =
+            err instanceof Error && err.message === "TOKEN_EXPIRED"
+              ? "登录已过期：请到后台重新登录 GitHub，再回来保存。"
+              : `保存失败（${err instanceof Error ? err.message : err}），可复制 JSON 到后台手动保存。`;
+        }
+      });
     });
   }
 </script>

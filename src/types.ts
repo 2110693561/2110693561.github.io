@@ -10,4 +10,6 @@ export interface Annotation {
   content: string;
   /** 日期 YYYY-MM-DD */
   date: string;
+  /** 来源文件名（如 20260901090000.json），构建时注入，用于页面上直接删除 */
+  file?: string;
 }
