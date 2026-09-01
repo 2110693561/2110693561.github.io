@@ -1100,6 +1100,43 @@
             xhr.send(JSON.stringify({ message: message, content: b64Content, branch: BRANCH }));
           });
         }
+        // 批量提交：多个文件合成一次 commit（避免连续提交触发 GitHub 次级限流导致后台登出）
+        async function ghPutFilesBatch(t, files, message) {
+          var h = gh(t);
+          async function j(url, opts) {
+            var res = await fetch(GH + url, Object.assign({ headers: h }, opts || {}));
+            if (!res.ok) {
+              var msg = "";
+              try {
+                msg = (await res.json()).message || "";
+              } catch (e) {}
+              throw new Error("GitHub " + res.status + "：" + (msg || res.statusText));
+            }
+            return res.json();
+          }
+          var ref = await j("/repos/" + REPO + "/git/ref/heads/" + BRANCH, { cache: "no-store" });
+          var baseCommit = await j("/repos/" + REPO + "/git/commits/" + ref.object.sha);
+          var treeItems = [];
+          for (var i = 0; i < files.length; i++) {
+            var blob = await j("/repos/" + REPO + "/git/blobs", {
+              method: "POST",
+              body: JSON.stringify({ content: files[i].content, encoding: "base64" }),
+            });
+            treeItems.push({ path: files[i].path, mode: "100644", type: "blob", sha: blob.sha });
+          }
+          var tree = await j("/repos/" + REPO + "/git/trees", {
+            method: "POST",
+            body: JSON.stringify({ base_tree: baseCommit.tree.sha, tree: treeItems }),
+          });
+          var commit = await j("/repos/" + REPO + "/git/commits", {
+            method: "POST",
+            body: JSON.stringify({ message: message, tree: tree.sha, parents: [baseCommit.sha] }),
+          });
+          await j("/repos/" + REPO + "/git/refs/heads/" + BRANCH, {
+            method: "PATCH",
+            body: JSON.stringify({ sha: commit.sha }),
+          });
+        }
         async function bulkUpload(fileList) {
           var t = token();
           if (!t) {
@@ -1403,6 +1440,7 @@
           try {
             var okCount = 0;
             var imgCount = 0;
+            var jobFiles = [];
             for (var i = 0; i < mds.length; i++) {
               var f = mds[i];
               toast("导入中 " + (i + 1) + "/" + mds.length + "：" + f.name);
@@ -1459,11 +1497,11 @@
                   return pre + url + post;
                 }
               );
-              // 先传图片（同名只传一次），再传笔记
+              // 先读图片（同名只传一次），再收集到批次里
               var keys = Object.keys(uploaded);
               for (var u = 0; u < keys.length; u++) {
                 var item = uploaded[keys[u]];
-                toast("上传图片 " + (u + 1) + "/" + keys.length + "：" + item.name);
+                toast("读取图片 " + (u + 1) + "/" + keys.length + "：" + item.name);
                 var data = await new Promise(function (res, rej) {
                   var r = new FileReader();
                   r.onload = function () {
@@ -1474,11 +1512,20 @@
                   };
                   r.readAsDataURL(item.file);
                 });
-                await ghPutFile(t, imgDir + item.name, data, "导入笔记图片：" + item.name);
+                jobFiles.push({ path: imgDir + item.name, content: data });
                 imgCount++;
               }
-              await ghPutFile(t, "src/content/notes/" + fname, b64(body), "导入随手记：" + base);
+              jobFiles.push({ path: "src/content/notes/" + fname, content: b64(body) });
               okCount++;
+            }
+            // 整个导入合并为一次 commit，避免爆发式提交触发限流把后台登出
+            if (jobFiles.length) {
+              toast("提交中（一次提交 " + jobFiles.length + " 个文件）…");
+              await ghPutFilesBatch(
+                t,
+                jobFiles,
+                "导入随手记 " + okCount + " 篇" + (imgCount ? "、" + imgCount + " 张图片" : "")
+              );
             }
             toast(
               "已导入 " + okCount + " 篇随手记" + (imgCount ? "、" + imgCount + " 张图片" : "") + "，构建后生效"
