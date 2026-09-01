@@ -175,26 +175,47 @@
         }
       }
       /* ---------- 明暗主题切换按钮（JS 注入，写入与前台相同的主题键） ---------- */
-      /* 随手记二级列表页的「导入笔记」胶囊按钮 */
-      .qa-import-pill {
-        display: inline-flex;
+      #theme-toggle {
+        display: flex;
         align-items: center;
-        gap: 6px;
-        margin-right: 10px;
-        padding: 7px 16px;
+        margin: 0 16px 12px;
+        padding: 6px 14px;
         border-radius: 999px;
         border: 1px solid var(--border);
         background: var(--panel);
         color: var(--muted) !important;
-        font-size: 13.5px;
+        font-size: 13px;
         font-weight: 600;
         cursor: pointer;
         transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
       }
-      .qa-import-pill:hover {
+      #theme-toggle:hover {
         background: #eceef4;
         border-color: #c6ccdb;
         color: var(--text) !important;
+      }
+      /* 随手记列表页「导入笔记」：紧跟「+ 随手记」右侧，同尺寸浅色样式 */
+      #nc-root .qa-import-pill {
+        display: inline-flex !important;
+        align-items: center;
+        gap: 6px;
+        margin-left: 10px;
+        padding: 8px 18px;
+        border-radius: 8px;
+        border: 1px solid var(--border) !important;
+        background: var(--panel) !important;
+        color: var(--text) !important;
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.4;
+        cursor: pointer;
+        box-shadow: var(--shadow-sm);
+        vertical-align: middle;
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+      #nc-root .qa-import-pill:hover {
+        background: #eceef4 !important;
+        border-color: #c6ccdb !important;
       }
 
       /* ---------- 「暂存草稿」按钮（注入在编辑器「保存」按钮左侧） ---------- */
@@ -1386,7 +1407,7 @@
             return;
           }
           if (document.getElementById("qa-import-notes")) return;
-          // 放在顶部标题卡「+ 随手记」新建按钮左侧
+          // 放在顶部标题卡「+ 随手记」新建按钮右侧（紧挨着）
           var anchor = document.querySelector('#nc-root a[href*="collections/notes/new"]');
           if (!anchor) return;
           var btn = document.createElement("button");
@@ -1398,7 +1419,7 @@
           btn.addEventListener("click", function () {
             noteInput.click();
           });
-          if (anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor);
+          if (anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor.nextSibling);
           else anchor.parentElement.appendChild(btn);
         }
 
