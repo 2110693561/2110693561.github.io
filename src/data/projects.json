@@ -24,6 +24,17 @@
         "Astro",
         "GitHub Pages"
       ]
+    },
+    {
+      "tags": [
+        "嵌入式",
+        "面试"
+      ],
+      "hidden": false,
+      "name": "转载",
+      "description": "一个面试，一条经验",
+      "url": "https://2110693561.github.io/embedded-interview/#c",
+      "repo": "https://github.com/2110693561/embedded-interview"
     }
   ]
 }
