@@ -7,7 +7,7 @@ tags:
   - ESP32
   - FreeRTOS
 draft: false
-password: demo1234
+
 ---
 
 这篇还是草稿，用来验证 draft 功能：设置了 `draft: true` 的文章不会出现在列表、归档和搜索里。
