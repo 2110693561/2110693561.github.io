@@ -617,9 +617,13 @@
         async function load(col, slug) {
           var t = token();
           if (!t) throw new Error("未检测到登录令牌，请退出后台重新登录");
-          var exts = ["md", "mdx"];
+          // 批注集合是 JSON 文件，存放在 src/data/annotations/
+          var exts = col === "annotations" ? ["json"] : ["md", "mdx"];
           for (var i = 0; i < exts.length; i++) {
-            var path = "src/content/" + col + "/" + slug + "." + exts[i];
+            var path =
+              col === "annotations"
+                ? "src/data/annotations/" + slug + ".json"
+                : "src/content/" + col + "/" + slug + "." + exts[i];
             var res = await fetch(GH + "/repos/" + REPO + "/contents/" + path + "?ref=" + BRANCH, {
               headers: gh(t),
               cache: "no-store",
@@ -629,7 +633,19 @@
             var json = await res.json();
             var text = json.encoding === "base64" ? unb64(json.content) : json.content;
             var m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-            var entry = { sha: json.sha, path: path, text: text, fm: m ? m[1] : "", state: m ? parseState(m[1]) : { draft: false, hidden: false, password: "" } };
+            var state = { draft: false, hidden: false, password: "", title: "" };
+            if (m) {
+              state = parseState(m[1]);
+            } else if (col === "annotations") {
+              // 批注：标题取 post 字段，用于「原文」跳转与删除确认
+              try {
+                var j = JSON.parse(text);
+                state.title = j.post || slug;
+              } catch (e) {
+                state.title = slug;
+              }
+            }
+            var entry = { sha: json.sha, path: path, text: text, fm: m ? m[1] : "", state: state };
             cache[col + "/" + slug] = entry;
             return entry;
           }
@@ -712,6 +728,7 @@
         }
 
         function mark(btn, on) {
+          if (!btn) return;
           btn.classList.toggle("on", !!on);
         }
         function refreshRow(group, state) {
@@ -722,12 +739,21 @@
         function buildGroup(col, slug) {
           var group = document.createElement("span");
           group.className = "qa-group";
-          var defs = [
-            { k: "draft", label: "草稿", title: "转草稿：保存但不在网站上发布" },
-            { k: "hidden", label: "隐藏", title: "隐藏：列表不显示，直接链接仍可访问" },
-            { k: "password", label: "加密", title: "加密：访客需输入密码才能查看" },
-            { k: "delete", label: "删除", title: "删除：从仓库删除这个文件，不可恢复" },
-          ];
+          var defs;
+          if (col === "annotations") {
+            // 批注：跳原文 + 删除（没有草稿/隐藏/加密概念）
+            defs = [
+              { k: "open", label: "原文", title: "跳转到这篇批注所在的文章" },
+              { k: "delete", label: "删除", title: "删除：从仓库删除这个批注文件，不可恢复" },
+            ];
+          } else {
+            defs = [
+              { k: "draft", label: "草稿", title: "转草稿：保存但不在网站上发布" },
+              { k: "hidden", label: "隐藏", title: "隐藏：列表不显示，直接链接仍可访问" },
+              { k: "password", label: "加密", title: "加密：访客需输入密码才能查看" },
+              { k: "delete", label: "删除", title: "删除：从仓库删除这个文件，不可恢复" },
+            ];
+          }
           defs.forEach(function (d) {
             var b = document.createElement("button");
             b.type = "button";
@@ -744,6 +770,13 @@
                 b.classList.add("busy");
                 var entry = cache[col + "/" + slug] || (await load(col, slug));
                 if (!entry) throw new Error("找不到条目文件（" + col + "/" + slug + "）");
+                if (d.k === "open") {
+                  b.classList.remove("busy");
+                  var post = entry.state && entry.state.title;
+                  if (!post) throw new Error("批注缺少 post 字段，无法跳转");
+                  window.open("/posts/" + encodeURIComponent(post) + "/", "_blank");
+                  return;
+                }
                 if (d.k === "delete") {
                   b.classList.remove("busy");
                   if (!confirm("确定删除《" + (entry.state.title || slug) + "》？文件将从仓库删除，不可恢复。")) return;
