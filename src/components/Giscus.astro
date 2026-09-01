@@ -62,6 +62,12 @@ const enabled =
 
 <style>
   .giscus-wrap {
-    margin-top: 44px;
+    margin: 44px 0 0;
+  }
+  /* 桌面端与正文列对齐（1fr ≈ 774px，右侧还有 230px 目录栏） */
+  @media (min-width: 1080px) {
+    .giscus-wrap {
+      max-width: 774px;
+    }
   }
 </style>
