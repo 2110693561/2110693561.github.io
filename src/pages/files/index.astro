@@ -210,7 +210,9 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
   </script>
 </BaseLayout>
 
-<style>
+<style is:global>
+  /* 注意：预览内容（img/iframe/file-text）由前端 JS 动态创建，
+     不带 Astro 的 scoped 属性，因此本块样式必须全局生效才能匹配 */
   .file-list {
     display: flex;
     flex-direction: column;
