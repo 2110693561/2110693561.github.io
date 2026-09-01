@@ -109,17 +109,17 @@ const files = fs
             const firstExt = (f.atts[0]?.split("?")[0].split(".").pop() ?? "file").toUpperCase();
             return (
               <a class="card file-card" href={`${base}files/`}>
-                {img ? (
-                  <img class="file-thumb" src={img} alt={f.title} loading="lazy" />
-                ) : (
-                  <span class="file-thumb-placeholder">{firstExt}</span>
-                )}
                 <div class="file-card-body">
                   <h3>{f.title}</h3>
                   <p>
                     {f.atts.length} 个文件{f.date ? ` · ${f.date}` : ""}
                   </p>
                 </div>
+                {img ? (
+                  <img class="file-thumb" src={img} alt={f.title} loading="lazy" />
+                ) : (
+                  <span class="file-thumb-placeholder">{firstExt}</span>
+                )}
               </a>
             );
           })}
