@@ -17,9 +17,6 @@ locale: zh_Hans
 
 media_folder: public/images
 public_folder: /images
-# 媒体库支持子文件夹归类
-media_library:
-  folder_support: true
 
 collections:
   # ---------- 站点设置 ----------
