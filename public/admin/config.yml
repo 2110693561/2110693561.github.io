@@ -2,9 +2,9 @@ backend:
   name: github
   repo: 2110693561/2110693561.github.io
   branch: main
-  # 部署 oauth-worker（Cloudflare Worker）之后，取消注释并填你的 Worker 地址，
-  # 线上后台才能通过 GitHub 登录写入仓库：
-  # base_url: https://你的-worker.workers.dev
+  # Cloudflare Worker OAuth 代理（线上后台通过 GitHub 登录写入仓库）
+  base_url: https://decap-oauth-worker.zhanglingbin.workers.dev
+  auth_endpoint: auth
 
 # 本地开发：另开一个终端运行 `npm run cms`，后台即可直接读写本地文件（无需登录）
 local_backend: true
