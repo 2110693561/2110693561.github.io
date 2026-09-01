@@ -77,8 +77,8 @@ const files = fs
 
   {
     preparedNotes.length > 0 && (
-      <>
-        <div class="section-head">
+      <details class="collapse-section">
+        <summary class="section-head">
           <h2>随手记</h2>
           <span class="more-links">
             <a class="more" href={`${base}admin/#/collections/notes/new`} target="_blank">
@@ -86,13 +86,13 @@ const files = fs
             </a>
             <a class="more" href={`${base}notes/`}>全部随手记 →</a>
           </span>
-        </div>
+        </summary>
         <div class="timeline">
           {preparedNotes.map(({ n, html, payload }) => (
             <NoteCard note={n} html={html} payload={payload} />
           ))}
         </div>
-      </>
+      </details>
     )
   }
 
@@ -128,3 +128,10 @@ const files = fs
     )
   }
 </BaseLayout>
+
+<script>
+  // 点击 summary 里的链接（写随手记 / 全部随手记）时不切换折叠状态
+  document.querySelectorAll(".collapse-section > summary a").forEach((a) =>
+    a.addEventListener("click", (e) => e.stopPropagation())
+  );
+</script>

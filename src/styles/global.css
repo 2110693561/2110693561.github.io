@@ -137,6 +137,25 @@ h1, h2, h3, h4 { line-height: 1.3; }
 .section-head .more { font-size: 14px; color: var(--muted); }
 .section-head .more:hover { color: var(--accent); }
 
+/* ================= 可折叠区块（首页随手记） ================= */
+.collapse-section > summary { list-style: none; cursor: pointer; user-select: none; }
+.collapse-section > summary::-webkit-details-marker { display: none; }
+.collapse-section > summary h2::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 17px;
+  color: var(--muted);
+  transition: transform 0.2s ease;
+}
+.collapse-section[open] > summary h2::before { transform: rotate(90deg); }
+.collapse-section > summary:hover h2 { color: var(--accent); }
+.collapse-section[open] .timeline { animation: section-fade 0.25s ease; }
+@keyframes section-fade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
 /* ================= 卡片 ================= */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 /* 主页资料卡片：小缩略图（与后台一致）+ 标题，横排 */
