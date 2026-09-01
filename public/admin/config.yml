@@ -164,11 +164,16 @@ collections:
     fields:
       - { name: title, label: 名称, widget: string }
       - { name: date, label: 上传日期, widget: datetime, format: "YYYY-MM-DD", date_format: "YYYY-MM-DD", time_format: false }
-      - name: attachment
-        label: 文件
-        widget: file
-        choose_url: true
+      - name: attachments
+        label: 文件（可多个）
+        widget: list
         required: true
-        hint: 点「选择文件」→ 切到「上传新的」标签页 → 从电脑选择任意文件（md / pdf / zip / word / 图片均可）；也可直接把文件拖进弹窗，或切「链接」标签页粘贴文件网址
+        hint: 点「+ 添加文件」→「选择文件」→ 上传；重复添加即可传多个文件（md / pdf / zip / word / 图片等）
+        fields:
+          - name: file
+            label: 文件
+            widget: file
+            choose_url: true
+            required: true
       - { name: description, label: 说明（可选）, widget: text, required: false }
       - { name: hidden, label: 隐藏（不在资料页显示）, widget: boolean, default: false, required: false }

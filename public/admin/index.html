@@ -622,6 +622,7 @@
             var path = "src/content/" + col + "/" + slug + "." + exts[i];
             var res = await fetch(GH + "/repos/" + REPO + "/contents/" + path + "?ref=" + BRANCH, {
               headers: gh(t),
+              cache: "no-store",
             });
             if (res.status === 404) continue;
             if (!res.ok) throw await ghError(res);
@@ -651,7 +652,10 @@
           entry.text = content;
           entry.fm = fm;
           entry.state = parseState(fm);
-          var meta = await fetch(GH + "/repos/" + REPO + "/contents/" + entry.path + "?ref=" + BRANCH, { headers: gh(t) });
+          var meta = await fetch(GH + "/repos/" + REPO + "/contents/" + entry.path + "?ref=" + BRANCH, {
+            headers: gh(t),
+            cache: "no-store",
+          });
           if (meta.ok) entry.sha = (await meta.json()).sha;
         }
         function slugOf(path) {
@@ -660,7 +664,9 @@
         async function save(col, slug, patch, actionName) {
           var t = token();
           if (!t) throw new Error("未检测到登录令牌，请退出后台重新登录");
-          var entry = cache[col + "/" + slug] || (await load(col, slug));
+          // 写入前强制取最新版本，避免拿到过期的 sha 导致 409
+          delete cache[col + "/" + slug];
+          var entry = await load(col, slug);
           if (!entry) throw new Error("找不到条目文件（" + col + "/" + slug + "）");
           var fm = entry.fm;
           if ("draft" in patch) fm = setKey(fm, "draft", String(patch.draft));
@@ -688,7 +694,9 @@
         async function remove(col, slug) {
           var t = token();
           if (!t) throw new Error("未检测到登录令牌，请退出后台重新登录");
-          var entry = cache[col + "/" + slug] || (await load(col, slug));
+          // 同样强制取最新版本，避免 sha 过期 409
+          delete cache[col + "/" + slug];
+          var entry = await load(col, slug);
           if (!entry) throw new Error("找不到条目文件（" + col + "/" + slug + "）");
           var res = await fetch(GH + "/repos/" + REPO + "/contents/" + entry.path, {
             method: "DELETE",

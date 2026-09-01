@@ -23,6 +23,16 @@ const kindOf = (u: string) => {
   if (TEXT.includes(e)) return "text";
   return "file";
 };
+// 每条资料的文件列表：兼容旧版单文件 attachment + 新版多文件 attachments
+const fileList = (f: (typeof files)[number]) => {
+  const list: string[] = [];
+  if (f.data.attachment) list.push(urlOf(f.data.attachment));
+  for (const a of f.data.attachments ?? []) {
+    if (a.file && !list.includes(urlOf(a.file))) list.push(urlOf(a.file));
+  }
+  return list;
+};
+const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
 ---
 
 <BaseLayout title="资料" description="上传的笔记与资料库，支持在线预览与下载。">
@@ -45,29 +55,37 @@ const kindOf = (u: string) => {
   <div class="file-list">
     {
       files.map((f) => {
-        const url = urlOf(f.data.attachment);
-        const kind = kindOf(url);
-        const ext = extOf(url).toUpperCase() || "FILE";
+        const urls = fileList(f);
         return (
-          <div class="card file-card" data-url={url} data-kind={kind} data-title={f.data.title}>
-            <div class="file-badge">{ext}</div>
-            <div class="file-info">
+          <div class="card file-card">
+            <div class="file-head">
               <h3>{f.data.title}</h3>
               <p class="desc">
                 {fmtDate(f.data.date)}
                 {f.data.description ? " · " + f.data.description : ""}
               </p>
             </div>
-            <div class="file-actions">
-              {kind !== "file" && (
-                <button type="button" class="btn file-preview-btn" data-url={url} data-kind={kind}>
-                  预览
-                </button>
-              )}
-              <a class="btn" href={url} target="_blank" rel="noopener" download>
-                下载
-              </a>
-            </div>
+            {urls.map((u) => {
+              const kind = kindOf(u);
+              return (
+                <div class="file-row">
+                  <span class="file-badge">{(extOf(u) || "file").toUpperCase()}</span>
+                  <span class="file-name" title={nameOf(u)}>
+                    {nameOf(u)}
+                  </span>
+                  <div class="file-actions">
+                    {kind !== "file" && (
+                      <button type="button" class="btn file-preview-btn" data-url={u} data-kind={kind}>
+                        预览
+                      </button>
+                    )}
+                    <a class="btn" href={u} target="_blank" rel="noopener" download>
+                      下载
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         );
       })
@@ -172,7 +190,8 @@ const kindOf = (u: string) => {
     document.querySelectorAll<HTMLButtonElement>(".file-preview-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const card = btn.closest(".file-card") as HTMLElement;
-        const title = card?.dataset.title || "预览";
+        const title =
+          card?.querySelector<HTMLElement>(".file-head h3")?.textContent?.trim() || "预览";
         const url = btn.dataset.url!;
         openModal(title, url);
         body.innerHTML = "";
@@ -195,16 +214,30 @@ const kindOf = (u: string) => {
     gap: 12px;
   }
   .file-card {
+    padding: 14px 18px;
+  }
+  .file-head h3 {
+    margin: 0;
+    font-size: 15.5px;
+  }
+  .file-head .desc {
+    margin: 2px 0 0;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .file-row {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 14px 18px;
+    gap: 12px;
+    padding: 8px 0 0;
+    margin-top: 8px;
+    border-top: 1px dashed var(--border);
   }
   .file-badge {
     flex: none;
     min-width: 52px;
     text-align: center;
-    padding: 6px 8px;
+    padding: 5px 8px;
     border-radius: 8px;
     background: var(--accent-soft);
     color: var(--accent-strong);
@@ -212,18 +245,13 @@ const kindOf = (u: string) => {
     font-weight: 700;
     letter-spacing: 0.04em;
   }
-  .file-info {
+  .file-name {
     flex: 1;
     min-width: 0;
-  }
-  .file-info h3 {
-    margin: 0;
-    font-size: 15.5px;
-  }
-  .file-info .desc {
-    margin: 2px 0 0;
-    font-size: 13px;
-    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
   }
   .file-actions {
     flex: none;

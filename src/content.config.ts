@@ -53,8 +53,10 @@ const files = defineCollection({
     title: z.string(),
     date: z.coerce.date(),
     description: z.string().optional(),
-    // 附件地址（如 /files/xxx.pdf）
-    attachment: z.string(),
+    // 旧版单文件（保留兼容）
+    attachment: z.string().optional(),
+    // 多文件：每个条目可挂多个附件
+    attachments: z.array(z.object({ file: z.string() })).default([]),
     // 隐藏：不在资料页显示
     hidden: z.boolean().default(false),
   }),
