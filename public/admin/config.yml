@@ -10,9 +10,16 @@ backend:
 local_backend: true
 
 site_url: https://2110693561.github.io
+# 顶栏显示「查看站点」快捷按钮
+display_url: https://2110693561.github.io
+# 界面中文化
+locale: zh_Hans
 
 media_folder: public/images
 public_folder: /images
+# 媒体库支持子文件夹归类
+media_library:
+  folder_support: true
 
 collections:
   # ---------- 站点设置 ----------
@@ -41,6 +48,11 @@ collections:
     create: true
     editor:
       preview: false
+    sortable_fields: [date, title]
+    view_filters:
+      - { label: 已发布, field: draft, pattern: false }
+      - { label: 草稿, field: draft, pattern: true }
+      - { label: 已加密, field: password, pattern: ".+" }
     fields:
       - { name: title, label: 标题, widget: string }
       - { name: date, label: 日期, widget: datetime, format: "YYYY-MM-DD", date_format: "YYYY-MM-DD", time_format: false }
@@ -64,6 +76,9 @@ collections:
     create: true
     editor:
       preview: false
+    view_filters:
+      - { label: 公开, field: password, pattern: "^$" }
+      - { label: 已加密, field: password, pattern: ".+" }
     fields:
       - { name: date, label: 日期, widget: datetime, format: "YYYY-MM-DDTHH:mm", date_format: "YYYY-MM-DD", time_format: "HH:mm" }
       - { name: title, label: 标题（可选）, widget: string, required: false }
