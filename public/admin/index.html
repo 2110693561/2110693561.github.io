@@ -1566,7 +1566,7 @@
           }
         }
 
-        // 编辑器内图片点击放大（浅灯箱）
+        // 编辑器内图片：JS 扫描标记放大 + 点击灯箱看大图
         (function () {
           var lb = document.createElement("div");
           lb.id = "qa-lightbox";
@@ -1579,22 +1579,64 @@
           });
           function mount() {
             document.body.appendChild(lb);
+            var st = document.createElement("style");
+            st.textContent =
+              "#nc-root img.qa-big{width:min(100%,480px)!important;height:auto!important;border-radius:8px;cursor:zoom-in;}";
+            document.head.appendChild(st);
           }
           if (document.body) mount();
           else document.addEventListener("DOMContentLoaded", mount);
+
+          function step(img) {
+            if (img.classList.contains("qa-big")) return;
+            if (img.closest("#qa-lightbox")) return;
+            // 排除媒体库弹窗、顶栏、侧边栏里的图标类图片
+            if (
+              img.closest(
+                '[class*="media" i],[class*="modal" i],[class*="dialog" i],[class*="appBar" i],[class*="topbar" i],[class*="sidebar" i]'
+              )
+            )
+              return;
+            // 只放大“真图片”的缩略图（原图宽度 >= 200px），跳过小图标
+            if ((img.naturalWidth || 0) < 200) return;
+            img.classList.add("qa-big");
+          }
+          function tag(root) {
+            if (root.nodeType !== 1) return;
+            if (root.tagName === "IMG") step(root);
+            if (root.querySelectorAll) root.querySelectorAll("img").forEach(step);
+          }
+
+          var mo = new MutationObserver(function (muts) {
+            for (var i = 0; i < muts.length; i++) {
+              var n = muts[i];
+              if (n.type === "childList") {
+                n.addedNodes.forEach(function (an) {
+                  if (an.nodeType === 1) tag(an);
+                });
+              } else if (n.target.tagName === "IMG") {
+                step(n.target);
+              }
+            }
+          });
+          function start() {
+            tag(document.body);
+            mo.observe(document.body, {
+              childList: true,
+              subtree: true,
+              attributes: true,
+              attributeFilter: ["src"],
+            });
+          }
+          if (document.body) start();
+          else document.addEventListener("DOMContentLoaded", start);
+
           document.addEventListener(
             "click",
             function (e) {
               var t = e.target;
               var img = t && t.tagName === "IMG" ? t : null;
-              if (!img || !img.closest("#nc-root")) return;
-              if (img.closest("#qa-lightbox")) return;
-              if (
-                !img.closest(
-                  '[class*="markdown" i], .cm-editor, [class*="editable" i], [class*="editor" i]'
-                )
-              )
-                return;
+              if (!img || !img.classList.contains("qa-big")) return;
               e.preventDefault();
               e.stopPropagation();
               lb.querySelector("img").src = img.currentSrc || img.src;
