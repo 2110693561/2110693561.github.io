@@ -1,125 +1,209 @@
 ---
-title: 我的博客是怎么搭起来的：全流程复盘与踩坑实录
-description: 从零搭建 Astro + Decap CMS 博客的完整历程：网页后台、草稿加密、资料管理、随手记导入，以及一路踩过的坑。
+title: 我的博客是怎么搭起来的：技术栈、踩坑实录与优化路线
+description: 从零搭建 Astro + Decap CMS 博客的完整复盘：技术选型、架构设计、功能实现细节，十几个实际问题的排查与解决过程，以及后续优化路线图。
 date: 2026-09-02
 category: 建站
-tags: [Astro, Decap CMS, GitHub Pages, 踩坑]
+tags: [Astro, Decap CMS, GitHub Pages, Cloudflare, 踩坑]
 ---
 
-这个博客从上线到现在，前前后后做了大量的功能迭代。趁记忆还热乎，把整个搭建过程和踩过的坑整理成一篇复盘，既方便以后回看，也希望能帮到同样想搭静态博客的你。
+这个博客从上线到现在，前前后后做了大量迭代：网页后台、草稿/加密、资料管理、随手记导入、批注系统……这篇文章把技术栈、实现细节、踩过的坑和后续规划一次性讲清楚。
 
-## 一、选型：为什么是 Astro + Decap CMS
+## 一、成果概览
 
-需求很明确：
+先看现在这个站已经有什么：
 
-1. **免费托管**：GitHub Pages 足够，域名就用 `用户名.github.io`
-2. **纯静态**：没有服务器，安全性省心
-3. **网页后台**：不想每次写文章都开编辑器 + git push，希望像用 Notion 一样在网页上写
-4. **数据在自己手里**：内容以 Markdown 文件形式存在仓库里，随时可迁移
+- **前台**：文章（分类/标签/归档）、随手记时间线、资料预览页、项目展示、全文搜索、RSS、明暗主题
+- **后台**（`/admin/`）：完全在网页上写作和管理，不需要本地环境，不需要手动 git
+- **内容管理**：草稿、隐藏、密码加密、批量上传、本地笔记导入、划段批注
+- **托管成本**：0 元（GitHub Pages + Cloudflare 免费额度）
 
-最终选型：
+## 二、技术栈全景
 
-- **Astro**：构建快、零默认 JS，内容集合（Content Collections）用 schema 管理文章元数据非常舒服
-- **Decap CMS**（前身 Netlify CMS）：单文件接入，配合 GitHub 后端直接在网页上读写仓库
-- **Cloudflare Worker**：免费跑一个 OAuth 中转服务，解决 GitHub OAuth 回调问题
+| 层 | 技术 | 用途 |
+|---|---|---|
+| 站点框架 | Astro | 静态生成、内容集合（Content Collections）+ schema 校验 |
+| 网页后台 | Decap CMS 3 | 浏览器里的写作/管理界面，单 HTML 接入 |
+| 托管 | GitHub Pages | 免费静态托管，`用户名.github.io` |
+| CI/CD | GitHub Actions | push 后自动 `astro build` 并发布 |
+| 内容存储 | Git 仓库本身 | 所有文章/配置都是 Markdown/JSON/YAML 文件 |
+| API | GitHub Contents API / Git Data API | 网页后台读写仓库；Git Data API 用于批量提交 |
+| 登录 | GitHub OAuth App + Cloudflare Worker | OAuth 中转服务，Secret 存 Worker 环境变量 |
+| 加密 | Web Crypto API（AES-GCM + PBKDF2） | 构建时加密正文，浏览器端输入密码解锁 |
+| 本地开发 | decap-server | 本地跑 CMS 时代理 GitHub 认证 |
+| 前端增强 | 原生 CSS 变量 / MutationObserver / IntersectionObserver | 主题系统、后台 UI 注入、灯箱等 |
+| 统计 | 不蒜子 | 页面访问计数 |
 
-## 二、基础架构
+几个选型理由：
 
-整体架构很简单：
+- **Astro**：默认零 JS、构建极快，Content Collections 可以用 zod schema 约束 frontmatter，写错字段构建直接报错，等于给内容上了类型检查
+- **Decap CMS**：不需要任何服务端，一个 `config.yml` 就能生成后台；内容仍以纯 Markdown 存仓库，随时可迁移
+- **Cloudflare Worker**：GitHub OAuth 需要 client_secret，不能暴露在前端，免费额度的 Worker 正好做中转
+
+## 三、架构设计
 
 ```
-浏览器 ──> GitHub Pages（静态站点 + /admin/ 后台）
+浏览器 ──> GitHub Pages（Astro 构建产物 + /admin/ 后台）
                 │
-                ├──> GitHub API（读写仓库内容）
-                └──> OAuth Worker（Cloudflare，登录中转）
+                ├──> GitHub API：网页后台直接读写仓库内容（每次保存 = 一次 git commit）
+                ├──> OAuth Worker（Cloudflare）：GitHub 登录中转，持有 client_secret
+                └──> 不蒜子：访问统计
+
+push 到 main ──> GitHub Actions：npm ci → astro build → deploy-pages
 ```
 
-后台 `/admin/` 只是一个 HTML + Decap CMS 的 JS，配置写在 `config.yml` 里，所有内容改动最终都是对 GitHub 仓库的提交，提交后 GitHub Actions 自动构建 Astro 并发布。
+核心思路：**内容即代码**。所有内容以 Markdown 存在仓库里，后台只是仓库的一个友好视图，任何改动都是可追溯、可回滚的 git 提交。
 
-## 三、后台功能逐步演进
+## 四、关键功能实现细节
 
-### 1. 界面美化
+### 1. 内容状态：草稿 / 隐藏 / 加密
 
-默认的 Decap 界面比较原始，通过注入 CSS 变量做了一轮现代化改造：参考 Sveltia / Notion 的风格，浅色底 + 柔和阴影 + 圆角卡片，并加了**夜间模式**，与前台通过 `localStorage` 的 `theme` 键同步——前台切夜间，后台自动跟随。
+在 schema 里给文章和随手记加了三个字段：
 
-### 2. 内容状态管理：草稿 / 隐藏 / 加密
+```ts
+draft: z.boolean().default(false),   // 不发布，仅后台可见
+hidden: z.boolean().default(false),  // 不进列表，直链可访问
+password: z.string().optional(),     // 加密
+```
 
-在文章和随手记的 schema 里加了三个字段：
+所有列表查询统一过滤：`getCollection("blog", ({ data }) => !data.draft && !data.hidden)`。
 
-- `draft`：草稿，不在网站、RSS、搜索中出现，只在后台可见
-- `hidden`：隐藏，列表里不出现，但知道链接仍可直接访问
-- `password`：加密，构建时用 AES-GCM 加密正文，访客输入密码才解锁
+加密的实现分两端：**构建时**如果有 `password`，把渲染好的 HTML 用 AES-GCM 加密成密文写进页面，明文不落盘；**浏览器端**输入密码后用 PBKDF2 派生密钥解密。这样即使翻仓库源码也看不到加密内容。
 
-配合列表页的快捷按钮（草稿 / 隐藏 / 加密 / 删除），一键切换状态；编辑页还有「暂存草稿」按钮，一键标记草稿并保存。
+### 2. 后台增强：不改源码的 CSS/JS 注入
+
+Decap 后台是 React 应用，没有官方主题能力。做法是在 `/admin/index.html` 里注入自定义 CSS（用 `[class*="appBar" i]` 这类属性选择器匹配内部类名）和一段常驻脚本：
+
+- 顶栏注入「回到主页」按钮和**明暗切换**（读写同一个 `localStorage.theme` 与前台同步）
+- 列表行注入快捷按钮：草稿 / 隐藏 / 加密 / 删除，一键切换并保存
+- 编辑器里用 `MutationObserver` 监控 DOM，自动放大图片缩略图 + 点击灯箱
+- 注册自定义预览模板，让编辑器「预览」面板的排版与前台完全一致
 
 ### 3. 批注系统
 
-文章正文支持划段批注：选中文字后写批注，数据通过 GitHub API 直接提交到仓库的 `src/data/annotations/`，刷新后所有人可见。批注样式做成左侧竖线 + 小字，不打扰正文阅读；批注按钮最高只出现到标题下方，避免遮挡导航。
+文章页选中文字 → 写批注 → **直接调 GitHub Contents API 提交** `src/data/annotations/` 下的 JSON 文件。构建时把批注数据内联进文章页，正文段落标号定位。批注按钮的垂直位置用 `getBoundingClientRect` 计算，并限制最低不越过文章标题，避免遮挡。
 
-### 4. 资料管理系统
+### 4. 资料管理
 
-新增「资料」集合，本地文件上传到 `public/files/`：
-
-- **批量上传**：文件选择器支持 Ctrl / Shift 多选，一次生成一条资料
-- **预览页 `/files/`**：图片、PDF、Markdown 直接在页面内显示，其他类型提供下载
-- **删除即清理**：删除资料时连附件一起删，不留孤儿文件
-- **首页资料卡片**：90×52px 小缩略图横排布局，占位符显示文件类型
+- 资料条目是 `src/files/` 下的 Markdown，附件存 `public/files/`（加时间戳前缀防重名）
+- 批量上传：原生文件选择器 Ctrl/Shift 多选 → 逐个上传 → **合并为一次 git 提交** → 刷新列表
+- 预览页 `/files/`：图片直接显示、PDF 用 `embed` 内嵌、Markdown 渲染成页面，其他类型给下载链接
+- 删除资料时级联删除附件文件，避免媒体库残留孤儿文件
 
 ### 5. 随手记导入
 
-手机电脑上的旧笔记不用手动搬运，直接导入：
+支持两种方式：
 
-- **导入笔记**：选择多个 `.md / .txt` 文件，文件名即标题，自动补日期
-- **导入文件夹（推荐）**：自动把 `复习.md` 和 `复习.assets/` 配对，图片上传到 `public/images/notes/笔记名/` 并改写文中路径，跳过 `.DS_Store` 等垃圾文件
+- **单文件导入**：多个 `.md/.txt`，文件名即标题，自动补日期；带 frontmatter 的保留原标题/标签
+- **文件夹导入（推荐）**：把 `笔记.md` 和 `笔记.assets/` 自动配对，图片上传到 `public/images/notes/笔记名/`，**并改写文中所有图片路径**，跳过 `.DS_Store` 等垃圾文件
 
-## 四、前台体验
+所有文件合并成**一次 git 提交**（Git Data API：创建 tree → 创建 commit → 更新 ref），既快又不会触发限流。
 
-- **明暗主题**：跟随系统 + 手动切换，全站统一
-- **图片灯箱**：编辑器和正文里的图片点击放大，Esc 或点遮罩关闭
-- **预览面板**：后台编辑器的预览配上前台同款排版，写的时候就能看到发布效果
-- **随手记折叠**：首页随手记区块可整体折叠；每条随手记默认只显示开头几行，点「展开全文」再展开——时间线一下子清爽了
+### 6. 前台体验
 
-## 五、踩坑实录（重点）
+- **随手记折叠**：首页区块用原生 `<details>/<summary>` 整体折叠；每条笔记默认 `max-height: 150px` + 底部渐变遮罩 + 「展开全文」按钮，JS 判断内容不足一屏就不折叠
+- **图片灯箱**：点击图片全屏预览，Esc/点遮罩关闭
+- **编辑器预览**：`CMS.registerPreviewTemplate` + 前台同款 `.prose` 样式表，预览即所见即所得
 
-这部分才是精华，全是实际撞过墙的：
+## 五、踩坑实录：问题与解决
 
-### 1. OAuth 登录相关
+### 坑 1：OAuth 登录失败
 
-- **回调 URL 必须分毫不差**：GitHub OAuth App 的 callback 要精确填 `Worker 地址 + /callback`，多一个斜杠都不行
-- **Client Secret 千万别写进文件**：用 `npx wrangler secret put GITHUB_CLIENT_SECRET` 存到 Worker 的环境变量里
+**现象**：后台 GitHub 登录后回调报错。
+**原因**：OAuth App 的回调 URL 与 Worker 实际回调地址不完全一致（多了或少了一个 `/callback`）。
+**解决**：回调 URL 必须精确到 `Worker地址/callback`；`client_secret` 用 `npx wrangler secret put GITHUB_CLIENT_SECRET` 存进 Worker，绝不写进仓库。
 
-### 2. GitHub API 限流与 409
+### 坑 2：批量导入触发 GitHub 二级限流
 
-- **连续提交触发二级限流**：导入多篇笔记时逐个文件提交，很快被 GitHub 限流。解决办法是用 Git Data API 批量建树，**多个文件合并成一次提交**
-- **409 Conflict**：CMS 拿着缓存的 SHA 去改文件就会被拒。快捷按钮操作前必须先拉最新版本再改
-- **浏览器缓存 404**：部署后访问 `/admin/` 报 404，多半是缓存，Ctrl+F5 解决
+**现象**：连续导入多篇笔记后，后面的提交全部 403，要等很久才恢复。
+**原因**：每个文件一次 commit，短时间高频写操作触发 GitHub 的 abuse 限流。
+**解决**：改用 **Git Data API 批量提交**——先把所有文件的 blob 建好，一次性建 tree、创建 commit、更新分支引用。N 个文件从 N 次提交变成 1 次。
 
-### 3. GitHub Pages 缓存
+### 坑 3：保存时 409 Conflict
 
-这是最迷惑的一个：**代码已经部署成功，页面却迟迟不更新**。GitHub Pages 的 CDN 对 HTML 有 10 分钟缓存，而且带查询参数也绕不过去。排查部署问题时别急着怀疑代码，先用 `curl` 看响应头里的 `Last-Modified` 和 `X-Cache` 确认到底是没部署还是缓存没过期。
+**现象**：后台点快捷按钮（草稿/隐藏/删除）偶尔报 409。
+**原因**：页面拿着缓存的文件 SHA 去更新，而文件在别处已被改过，SHA 对不上。
+**解决**：所有写操作前先 GET 一次最新 SHA 再提交；同时给请求加时间戳禁用缓存。
 
-这次就因为缓存走了大弯路——功能明明已上线，抓取工具的缓存却一直返回旧页面，差点推倒重来。
+### 坑 4：部署成功但页面不更新（最迷惑）
 
-### 4. 预览功能凭空消失
+**现象**：代码 push 了，Actions 也绿了，线上页面还是旧的，连带查询参数都绕不过缓存。
+**原因**：GitHub Pages 的 Fastly CDN 对 HTML 有 **10 分钟缓存**（`max-age=600`），且 cache key 不区分查询参数。
+**解决**：
+1. 用 `curl -I` 看响应头：`Last-Modified` 是部署时间、`X-Cache: MISS/HIT`、`Age` 判断缓存状态
+2. 请求一个**只在新版本里存在的静态资源**（如新 hash 的 CSS 文件）确认部署是否真的完成——静态资源与 HTML 同批部署，资源在就说明部署成功，剩下的只是缓存等待
+3. 急用时推一个空提交强制重新触发部署
 
-后台编辑页找不到「预览」切换，查了半天发现是 `config.yml` 里配置了 `editor: { preview: false }`。**集合级配置会直接关掉预览按钮**，想开预览必须显式设为 `true`。
+这次因为这个走了大弯路：抓取工具自身也有缓存，一直返回旧页面，差点误判成部署失败。
 
-### 5. 构建失败
+### 坑 5：后台「预览」按钮凭空消失
 
-- **图片引用失效**：导入的笔记里引用了没带上的图片，构建时直接报错。要么用文件夹导入把图片一起带上，要么把坏引用替换成占位文本
-- **CMS 配置陷阱**：`folder_support: true` 会导致配置加载失败，千万别加
+**现象**：编辑页找不到预览切换。
+**原因**：`config.yml` 里集合级配置了 `editor: { preview: false }`，会直接禁用预览。
+**解决**：改成 `preview: true`。教训：接手配置时先全局搜一遍关键配置项。
 
-### 6. Windows 环境问题
+### 坑 6：构建失败——图片引用不存在
 
-- PowerShell 的执行策略会拦 `npm.ps1`，要改用 `npm.cmd` / `npx.cmd`
-- 沙箱环境里网络操作被限制，git push 要在本地终端执行
+**现象**：导入笔记后站点构建直接红。
+**原因**：笔记里的 `![](...)` 引用的图片没跟着导入，Astro 构建时找不到文件。
+**解决**：用**文件夹导入**把 `笔记.assets/` 一起带上并改写路径；存量坏引用替换成占位文本。
 
-## 六、总结
+### 坑 7：CMS 配置陷阱
 
-整个下来最大的感受：
+- `folder_support: true` 会导致配置加载失败，别加
+- 媒体目录配置不对时，上传的文件会落到 `src/files/public/files/` 这种嵌套怪路径，注意 `media_folder` / `public_folder` 要配套
 
-1. **静态博客 + 网页后台**是完全可行的方案，内容以 Markdown 存仓库，后台体验不输动态博客
-2. **免费的代价是排队和缓存**：GitHub Pages 的构建队列和 CDN 缓存要有心理预期，部署后等几分钟再验证
-3. **每一次踩坑都值得记录**：这些坑当时气人，写下来就是一篇好文章
+### 坑 8：媒体库孤儿文件
 
-接下来还计划做：文章目录（TOC）侧栏、图片懒加载优化、批注的邮件通知。有兴趣欢迎常来逛逛。
+**现象**：删了资料条目，媒体库里还有图。
+**原因**：早期的删除只删记录不删附件。
+**解决**：删除时级联删除 `public/files/` 下的附件；历史残留用媒体库多选清理一次。
+
+### 坑 9：批注按钮遮挡标题
+
+**现象**：批注按钮出现在文章标题区域，挡住视线。
+**解决**：取 `.post-header` 的 `bottom` 作为按钮 top 的最小值：`Math.max(minTop, Math.min(rect.top - 14, ...))`。
+
+### 坑 10：Windows / 环境问题
+
+- PowerShell 执行策略拦截 `npm.ps1` → 统一用 `npm.cmd` / `npx.cmd`
+- 沙箱/受限环境里网络操作被禁 → git push 留在本地终端执行
+- 部署方式曾被改成「Deploy from branch」导致构建产物不对 → 恢复 Actions 工作流部署，并推空提交强制重部署
+
+### 坑 11：浏览器缓存干扰判断
+
+**现象**：改了后台样式怎么刷新都不变。
+**原因**：浏览器本地缓存 + CDN 缓存双重叠加，普通刷新不生效。
+**解决**：验证类操作一律 **Ctrl+F5** 硬刷新，或开无痕窗口；写操作请求统一加时间戳参数禁缓存。
+
+## 六、后续优化路线
+
+### 短期（体验补全）
+
+- **文章 TOC 目录**：右侧悬浮显示 h2/h3 层级，滚动高亮当前小节（IntersectionObserver）
+- **代码块增强**：语法高亮主题统一 + 一键复制按钮
+- **图片优化**：懒加载（`loading="lazy"` 已有，补充 `srcset` 响应式）+ 转 WebP/AVIF + `astro:assets` 统一管理
+- **评论系统**：接 giscus，用 GitHub Discussions 存评论，依然零服务器
+
+### 中期（能力扩展)
+
+- **搜索升级**：换成 Pagefind——构建时生成离线索引，搜索体验和分词都更好，还不占服务端
+- **定时发布**：frontmatter 加 `pubDate`，构建时（Actions 定时触发）过滤未到时间的文章，实现「预约发布」
+- **批注通知**：收到新批注时通过 Telegram Bot / 邮件推送提醒
+- **写作端增强**：编辑器支持粘贴图片直接上传到媒体库；手机端快捷发布随手记（PWA 或快捷指令调用 GitHub API）
+- **数据看板**：自托管 Umami 统计访问来源，替代纯计数
+
+### 长期（工程化）
+
+- **构建提速**：Actions 加 npm/Astro 构建缓存，构建时间从分钟级压到秒级
+- **SEO 完善**：自动生成 `sitemap.xml`、Open Graph 图（构建时用 satori 渲染文章封面）
+- **容灾备份**：Actions 定时把内容同步镜像到另一个私有仓库，防单点
+- **预览环境**：PR / 分支部署预览（GitHub Pages 不支持，可评估 Cloudflare Pages 的分支预览能力）
+- **View Transitions**：Astro 的视图过渡动画，让页面切换更顺滑
+
+## 七、总结
+
+1. **内容即代码**是这个站最核心的设计——Markdown 存仓库，后台只是视图，数据永远在自己手里
+2. **静态方案的坑主要在「缓存」和「限流」**：CDN 缓存要有等待预期，批量写操作要合并提交
+3. **免费 ≠ 凑合**：GitHub Pages + Cloudflare Worker + 原生前端技术就能做出完成度很高的产品
+
+如果你也想搭一个类似的站，欢迎参考这篇文章的架构和踩坑记录。有问题可以在文章下批注留言，我会收到提醒。
