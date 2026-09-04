@@ -161,6 +161,8 @@ async function handleDisk(request, env, url) {
       result = await diskBrowse(env, url);
     } else if (url.pathname === "/disk/upload" && request.method === "POST") {
       result = await diskUpload(env, request);
+    } else if (url.pathname === "/disk/mkdir" && request.method === "POST") {
+      result = await diskMkdir(env, url);
     } else {
       return json({ error: "Not Found" }, 404);
     }
@@ -372,7 +374,8 @@ async function diskUpload(env, request) {
 
   let tr = await getBaiduToken(env);
   let { token, rotated, source } = tr;
-  const dir = env.BAIDU_DIR || "/apps/mynote";
+  // 允许用户指定上传目录（管理页文件夹选择器），默认 /apps/mynote
+  const dir = (form.get("dir") || env.BAIDU_DIR || "/apps/mynote").replace(/\/+$/, "");
   const name = String(file.name || "upload.bin").replace(/[/\\]/g, "_");
   const remotePath = `${dir}/${name}`;
 
@@ -441,6 +444,33 @@ async function diskUpload(env, request) {
   });
   if (!fin || fin.errno !== 0) throw httpError(502, `文件创建失败 errno=${fin ? fin.errno : "非 JSON 响应"}`);
   return { path: remotePath, size: buf.length, rapid: false, rotated, source, newAccessToken: tr.newAccessToken };
+}
+
+/** POST /disk/mkdir?path=/apps/mynote/子目录：在网盘创建目录 */
+async function diskMkdir(env, url) {
+  const dirPath = url.searchParams.get("path") || "";
+  if (!dirPath) throw httpError(400, "缺少 path 参数");
+  let tr = await getBaiduToken(env);
+  let { token, rotated, source } = tr;
+  const res = await fetch(`${BAIDU_XPAN}/file?method=create&access_token=${encodeURIComponent(token)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ path: dirPath, isdir: "1", size: "0", block_list: "[]" }).toString(),
+  });
+  let j = await res.json().catch(() => null);
+  // access_token 过期降级刷新
+  if (source === "direct" && j && j.errno === -6 && env.BAIDU_REFRESH_TOKEN) {
+    tr = await getBaiduToken(env, { forceRefresh: true });
+    token = tr.token; rotated = tr.rotated; source = tr.source;
+    const res2 = await fetch(`${BAIDU_XPAN}/file?method=create&access_token=${encodeURIComponent(token)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ path: dirPath, isdir: "1", size: "0", block_list: "[]" }).toString(),
+    });
+    j = await res2.json().catch(() => null);
+  }
+  if (!j || j.errno !== 0) throw httpError(502, `创建目录失败 errno=${j ? j.errno : "非 JSON 响应"}`);
+  return { path: dirPath, rotated, source, newAccessToken: tr.newAccessToken };
 }
 
 function formatSize(s) {

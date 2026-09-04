@@ -81,6 +81,87 @@
       .topbar h1 a:hover {
         color: var(--text);
       }
+      #dir-bar {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .dir-input {
+        width: 200px;
+        padding: 6px 10px;
+        font-size: 13px;
+        font-family: ui-monospace, Consolas, monospace;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--card);
+        color: var(--text);
+      }
+      .dir-input:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .picker-overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,.5);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .picker-dialog {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        width: 540px;
+        max-width: 92vw;
+        max-height: 80vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .picker-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        font-weight: 600;
+      }
+      .picker-crumb {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 2px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .crumb-btn {
+        background: none;
+        border: none;
+        color: var(--accent);
+        cursor: pointer;
+        font-size: 13px;
+        padding: 2px 4px;
+        border-radius: 4px;
+      }
+      .crumb-btn:hover { text-decoration: underline; }
+      .picker-list { flex: 1; overflow-y: auto; }
+      .picker-foot {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 16px;
+        border-top: 1px solid var(--border);
+      }
+      .dir-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .dir-ico { font-size: 18px; }
+      .dir-name { font-size: 14px; }
       .icon-btn {
         flex: none;
         width: 34px;
@@ -310,7 +391,11 @@
       <div class="topbar">
         <h1>☁️ 网盘管理 <a href="/admin/" target="_self">← 内容后台</a></h1>
         <button class="btn" id="btn-refresh" type="button" hidden>↻ 刷新</button>
-        <button class="btn primary" id="btn-upload" type="button" hidden>⬆ 上传文件</button>
+        <span id="dir-bar" hidden>
+          <input type="text" id="dir-input" class="dir-input" value="/apps/mynote" title="上传目标文件夹" />
+          <button class="btn" id="btn-browse-dir" type="button" title="浏览选择文件夹">📁</button>
+          <button class="btn primary" id="btn-upload" type="button">⬆ 上传</button>
+        </span>
         <input type="file" id="file-input" hidden />
         <button class="icon-btn" id="theme-toggle" type="button" title="切换明暗主题">🌙</button>
       </div>
@@ -378,6 +463,9 @@
         btnLogin: $("btn-login"),
         btnRefresh: $("btn-refresh"),
         btnUpload: $("btn-upload"),
+        btnBrowseDir: $("btn-browse-dir"),
+        dirBar: $("dir-bar"),
+        dirInput: $("dir-input"),
         fileInput: $("file-input"),
         progress: $("progress"),
         progressBar: document.querySelector("#progress > i"),
@@ -492,14 +580,14 @@
         el.loginCard.hidden = true;
         el.main.hidden = false;
         el.btnRefresh.hidden = false;
-        el.btnUpload.hidden = false;
+        el.dirBar.hidden = false;
         refresh();
       }
 
       function showLogin(msg) {
         el.main.hidden = true;
         el.btnRefresh.hidden = true;
-        el.btnUpload.hidden = true;
+        el.dirBar.hidden = true;
         el.loginCard.hidden = false;
         el.rotateBanner.style.display = "none";
         if (msg) setStatus(msg, true);
@@ -686,10 +774,124 @@
         };
         var fd = new FormData();
         fd.append("file", file);
+        fd.append("dir", el.dirInput.value.trim() || "/apps/mynote");
         xhr.send(fd);
       }
       function setProgress(p) {
         el.progressBar.style.width = Math.round(p * 100) + "%";
+      }
+
+      // ==================== 文件夹选择弹窗 ====================
+      el.btnBrowseDir.addEventListener("click", function () {
+        openDirPicker(el.dirInput.value.trim() || "/");
+      });
+
+      function openDirPicker(startDir) {
+        var overlay = document.createElement("div");
+        overlay.className = "picker-overlay";
+        var currentDir = startDir;
+        var breadcrumbEl, listEl;
+
+        overlay.innerHTML =
+          '<div class="picker-dialog">' +
+          '<div class="picker-head"><span>📁 选择上传目录</span><button class="btn" onclick="this.closest(\'.picker-overlay\').remove()">✕</button></div>' +
+          '<div class="picker-crumb" data-crumb></div>' +
+          '<div class="picker-list" data-list style="max-height:400px;overflow-y:auto"></div>' +
+          '<div class="picker-foot"><button class="btn" data-mkdir>📂 新建子目录</button><button class="btn primary" data-ok>选定此目录</button></div>' +
+          '</div>';
+        document.body.appendChild(overlay);
+        breadcrumbEl = overlay.querySelector("[data-crumb]");
+        listEl = overlay.querySelector("[data-list]");
+
+        overlay.querySelector("[data-ok]").addEventListener("click", function () {
+          el.dirInput.value = currentDir;
+          overlay.remove();
+        });
+
+        overlay.querySelector("[data-mkdir]").addEventListener("click", function () {
+          var name = prompt("新建子目录名：");
+          if (!name) return;
+          name = name.trim().replace(/[/\\]/g, "");
+          if (!name) return;
+          var newPath = currentDir.replace(/\/+$/, "") + "/" + name;
+          createDir(newPath, overlay);
+        });
+
+        overlay.addEventListener("click", function (e) {
+          if (e.target === overlay) overlay.remove();
+        });
+
+        loadDir(currentDir);
+
+        function loadDir(dir) {
+          currentDir = dir;
+          breadcrumbEl.innerHTML = "";
+          var parts = dir.split("/").filter(Boolean);
+          var href = "";
+          // 根目录
+          var rootBtn = document.createElement("button");
+          rootBtn.className = "crumb-btn";
+          rootBtn.textContent = "🌐 /";
+          rootBtn.addEventListener("click", function () { loadDir("/"); });
+          breadcrumbEl.appendChild(rootBtn);
+          for (var i = 0; i < parts.length; i++) {
+            href += "/" + parts[i];
+            var sep = document.createElement("span");
+            sep.textContent = " / ";
+            sep.style.color = "var(--muted)";
+            breadcrumbEl.appendChild(sep);
+            (function (h, label) {
+              var b = document.createElement("button");
+              b.className = "crumb-btn";
+              b.textContent = label;
+              b.addEventListener("click", function () { loadDir(h); });
+              breadcrumbEl.appendChild(b);
+            })(href, parts[i]);
+          }
+
+          listEl.innerHTML = '<div style="color:var(--muted);padding:12px">加载中…</div>';
+          fetch(WORKER + "/disk/browse?dir=" + encodeURIComponent(dir), {
+            headers: { Authorization: "Bearer " + getToken() },
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+              if (!j.ok) { listEl.innerHTML = '<div style="color:red;padding:12px">' + (j.error || "加载失败") + "</div>"; return; }
+              var dirs = (j.files || []).filter(function (f) { return f.isdir; });
+              if (!dirs.length) { listEl.innerHTML = '<div style="color:var(--muted);padding:12px">无子目录</div>'; return; }
+              listEl.innerHTML = "";
+              for (var i = 0; i < dirs.length; i++) {
+                (function (d) {
+                  var row = document.createElement("div");
+                  row.className = "dir-row";
+                  row.innerHTML = '<span class="dir-ico">📁</span><span class="dir-name"></span>';
+                  row.querySelector(".dir-name").textContent = d.name;
+                  row.addEventListener("click", function () { loadDir(d.path); });
+                  row.style.cursor = "pointer";
+                  row.style.padding = "8px 12px";
+                  row.style.borderBottom = "1px solid var(--border)";
+                  row.addEventListener("mouseenter", function () { row.style.background = "var(--bg-soft)"; });
+                  row.addEventListener("mouseleave", function () { row.style.background = ""; });
+                  listEl.appendChild(row);
+                })(dirs[i]);
+              }
+            })
+            .catch(function () {
+              listEl.innerHTML = '<div style="color:red;padding:12px">网络错误</div>';
+            });
+        }
+
+        function createDir(newPath, overlayEl) {
+          fetch(WORKER + "/disk/mkdir?path=" + encodeURIComponent(newPath), {
+            method: "POST",
+            headers: { Authorization: "Bearer " + getToken() },
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+              if (j.ok) { loadDir(newPath); }
+              else { alert("创建失败：" + (j.error || "未知错误")); }
+            })
+            .catch(function () { alert("网络错误"); });
+        }
       }
 
       // ==================== 复制（clipboard API + execCommand 降级） ====================
