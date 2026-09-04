@@ -6,6 +6,9 @@ import { getCollection, render } from "astro:content";
 import { experimental_AstroContainer as AstroContainer } from "astro/container";
 import { encryptForBrowser, type EncryptedPayload } from "../../utils/encrypt";
 import { loadAnnotations } from "../../utils/annotations";
+import { marked } from "marked";
+import { replaceTokens } from "../../utils/netdisk-card.mjs";
+import netdiskManifest from "../../data/netdisk.json";
 import {
   getSortedPosts,
   formatDate,
@@ -37,8 +40,22 @@ if (post.data.password) {
 // 段落批注（存放在 src/data/annotations/*.json）
 const annotations = (loadAnnotations().get(post.id) ?? [])
   .slice()
-  .sort((a, b) => a.index - b.index);
+  .sort((a, b) => a.index - b.index)
+  // 构建期预渲染批注内容：markdown → HTML，并把 {{netdisk 文件名}} 替换为下载卡片
+  .map((anno) => ({
+    ...anno,
+    contentHtml: marked.parse(replaceTokens(anno.content, netdiskManifest), { breaks: true, mangle: false, headerIds: false }) as string,
+  }));
 const annotationJson = JSON.stringify(annotations).replace(/</g, "\\u003c");
+// 内联网盘清单子集（供前台新建批注即时显示卡片用，只含被本篇批注引用的文件）
+const annoFiles = new Set<string>();
+for (const a of annotations) {
+  for (const m of a.content.matchAll(/\{\{(?:netdisk|网盘)\s+([^{}]+?)\s*\}\}/g)) {
+    annoFiles.add(m[1]);
+  }
+}
+const annoNetdiskCards = (netdiskManifest.files || []).filter((f) => annoFiles.has(f.basename));
+const annoNetdiskJson = JSON.stringify(annoNetdiskCards).replace(/</g, "\\u003c");
 
 // 上下篇导航（列表按日期倒序）
 const allPosts = await getSortedPosts();
@@ -104,6 +121,9 @@ const base = import.meta.env.BASE_URL;
   {!encrypted && (
     <script type="application/json" id="annotation-data" set:html={annotationJson} />
   )}
+  {!encrypted && annoNetdiskCards.length > 0 && (
+    <script type="application/json" id="netdisk-cards-data" set:html={annoNetdiskJson} />
+  )}
 
   <nav class="post-nav" aria-label="上下篇">
     {
@@ -141,7 +161,7 @@ const base = import.meta.env.BASE_URL;
   const BRANCH = "main";
   const GH = "https://api.github.com";
 
-  type Anno = { post: string; index: number; quote?: string; content: string; date: string; file?: string };
+  type Anno = { post: string; index: number; quote?: string; content: string; date: string; file?: string; contentHtml?: string };
 
   /** 读取 Decap CMS 登录后留在浏览器里的令牌（站长身份） */
   const getUserToken = (): string | null => {
@@ -165,6 +185,60 @@ const base = import.meta.env.BASE_URL;
 
   /** UTF-8 安全的 base64 */
   const b64 = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+
+  /** 客户端渲染批注内容（新建批注即时显示，构建期已有 contentHtml 的不走这里） */
+  const TOKEN_RE_C = /\{\{(?:netdisk|网盘)\s+([^{}]+?)\s*\}\}/g;
+  const escHtml = (s: string) =>
+    String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  function buildCardClient(name: string): string {
+    const cardsEl = document.getElementById("netdisk-cards-data");
+    let cards: { basename: string; size: number; link: string | null; code: string | null }[] = [];
+    if (cardsEl) {
+      try { cards = JSON.parse(cardsEl.textContent || "[]"); } catch { /* ignore */ }
+    }
+    const f = cards.find((x) => x.basename === name);
+    if (!f) {
+      return `<span class="nd-card nd-missing"><span class="nd-ico">⚠️</span><span class="nd-info"><span class="nd-name">${escHtml(name)}</span><span class="nd-meta">网盘中未找到该文件</span></span><a class="nd-btn" href="/disk/">查看网盘</a></span>`;
+    }
+    const sizeStr = f.size ? (f.size < 1048576 ? `${(f.size / 1024).toFixed(1)} KB` : `${(f.size / 1048576).toFixed(1)} MB`) : "";
+    const code = f.code ? escHtml(f.code) : "";
+    const meta = [sizeStr, code ? `提取码 ${code}` : null].filter(Boolean).join(" · ");
+    const link = f.link
+      ? `<a class="nd-btn baidu-btn" href="${escHtml(f.link)}" target="_blank" rel="noopener">下载</a>`
+      : `<a class="nd-btn nd-disabled" href="/disk/" title="分享链接尚未创建">待分享</a>`;
+    const copy = code ? `<button class="nd-copy code-btn" type="button" data-code="${code}" title="点击复制提取码">提取码</button>` : "";
+    return `<span class="nd-card"><span class="nd-ico">📦</span><span class="nd-info"><span class="nd-name">${escHtml(f.basename)}</span><span class="nd-meta">${escHtml(meta)}</span></span>${link}${copy}</span>`;
+  }
+  let markedReady: Promise<void> | null = null;
+  function ensureMarked(): Promise<void> {
+    if (markedReady) return markedReady;
+    markedReady = new Promise<void>((resolve) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/marked/marked.min.js";
+      s.onload = () => resolve();
+      s.onerror = () => resolve();
+      document.head.appendChild(s);
+    });
+    return markedReady;
+  }
+  function renderAnnoContentClient(raw: string): string {
+    if (!raw) return "";
+    // 无 token 或无 marked 时退回 HTML 转义纯文本
+    if (!TOKEN_RE_C.test(raw) && !/[`#*\-\[>]/.test(raw)) {
+      return escHtml(raw).replace(/\n/g, "<br>");
+    }
+    // 先替换 token 为卡片 HTML span（marked 会原样保留内联 HTML）
+    const withCards = raw.replace(TOKEN_RE_C, (_m, name) => buildCardClient(name));
+    // 有 marked 时走 markdown 渲染；否则退回转义 + 卡片
+    if ((window as any).marked) {
+      try {
+        return (window as any).marked.parse(withCards, { breaks: true, mangle: false, headerIds: false });
+      } catch { /* fallthrough */ }
+    }
+    // marked 还没加载：先转义纯文本（卡片 span 是原始 HTML 会被保留），异步加载 marked 后下次再渲染
+    void ensureMarked();
+    return withCards.split("\n").map((l) => escHtml(l).replace(/<span /g, "<span ")).join("<br>");
+  }
 
   const body = document.getElementById("post-body");
   if (body) {
@@ -194,7 +268,12 @@ const base = import.meta.env.BASE_URL;
       quote.textContent = anno.quote ? `「${anno.quote.slice(0, 60)}」` : "";
       const content = document.createElement("div");
       content.className = "anno-content";
-      content.textContent = anno.content;
+      // 构建期已预渲染的用 innerHTML；新建批注即时显示时走客户端渲染降级
+      if (anno.contentHtml) {
+        content.innerHTML = anno.contentHtml;
+      } else {
+        content.innerHTML = renderAnnoContentClient(anno.content);
+      }
       const date = document.createElement("div");
       date.className = "anno-date";
       date.textContent = anno.date || "";
@@ -288,8 +367,9 @@ const base = import.meta.env.BASE_URL;
       const form = document.createElement("div");
       form.className = "anno-form";
       form.innerHTML = `
-        <textarea placeholder="写点批注…"></textarea>
+        <textarea placeholder="写点批注…支持 {{netdisk 文件名}} 渲染下载卡片"></textarea>
         <div class="anno-form-actions">
+          ${token ? '<button type="button" class="anno-netdisk" title="从网盘选文件插入">🌐</button>' : ""}
           ${token ? '<button type="button" class="anno-save">保存批注</button>' : ""}
           <button type="button" class="anno-copy">复制 JSON</button>
           <a class="anno-admin" href="${base}admin/#/collections/annotations/new" target="_blank">去后台</a>
@@ -303,6 +383,30 @@ const base = import.meta.env.BASE_URL;
       currentBlock.insertAdjacentElement("afterend", form);
 
       form.querySelector(".anno-cancel")!.addEventListener("click", closeForm);
+
+      const ndBtn = form.querySelector<HTMLButtonElement>(".anno-netdisk");
+      if (ndBtn) {
+        ndBtn.addEventListener("click", () => {
+          const ta = form.querySelector<HTMLTextAreaElement>("textarea")!;
+          const picker = (window as any).NetdiskPicker;
+          if (picker && picker.open) {
+            picker.open((basename: string) => {
+              const text = `{{netdisk ${basename}}}`;
+              const start = ta.selectionStart, end = ta.selectionEnd;
+              ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
+              ta.selectionStart = ta.selectionEnd = start + text.length;
+              ta.dispatchEvent(new Event("input", { bubbles: true }));
+              ta.focus();
+            });
+          } else {
+            // 选择器脚本还没加载：动态加载
+            const s = document.createElement("script");
+            s.src = base + "netdisk-picker.js";
+            s.onload = () => { ndBtn.click(); };
+            document.head.appendChild(s);
+          }
+        });
+      }
 
       form.querySelector<HTMLButtonElement>(".anno-copy")!.addEventListener("click", async (e) => {
         const payload = {

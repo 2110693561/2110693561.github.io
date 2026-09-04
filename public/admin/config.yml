@@ -123,7 +123,7 @@ collections:
         hint: 例如 gd32-gpio-notes；在文章页点「批注」复制 JSON 后从这里取 post 字段
       - { name: index, label: 段落序号, widget: number, value_type: int, min: 0, default: 0, hint: 从 0 开始，对应文章正文的第几个段落块 }
       - { name: quote, label: 段落文字片段（帮助定位，可选）, widget: string, required: false }
-      - { name: content, label: 批注内容, widget: text }
+      - { name: content, label: 批注内容, widget: markdown, hint: 支持 Markdown；{{netdisk 文件名}} 会渲染为网盘下载卡片（点编辑器右上「🌐 网盘」按钮选文件） }
       - { name: date, label: 日期, widget: datetime, format: "YYYY-MM-DD", date_format: "YYYY-MM-DD", time_format: false }
 
   # ---------- 项目展示 ----------
