@@ -1,0 +1,8 @@
+{
+  "post": "2026-09-04-netdisk-three-in-one",
+  "index": 9,
+  "quote": "核心设计原则——所有分享链接在 build 期就固化到产物里：浏览器直链不会污染 access_token，Worker",
+  "content": "百度网盘",
+  "date": "2026-09-04",
+  "file": "2026090407205386c2.json"
+}
