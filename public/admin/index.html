@@ -1944,5 +1944,250 @@
     </script>
     <!-- 网盘文件选择器：编辑器内「🌐 网盘」按钮，选文件即插入 {{netdisk 文件名}} -->
     <script src="/netdisk-picker.js" defer></script>
+    <!-- 预览面板：{{netdisk ...}} token → 下载卡片 HTML（与构建期 remark-netdisk 逻辑一致） -->
+    <script>
+    (function () {
+      "use strict";
+
+      var TOKEN_RE = /\{\{(?:netdisk|网盘)\s+([^{}]+?)\s*\}\}/g;
+      var processedAttr = "data-netdisk-processed";
+      var manifest = null;
+
+      function esc(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+
+      function formatSize(s) {
+        if (!isFinite(s) || s <= 0) return "";
+        if (s < 1024) return s + " B";
+        if (s < 1048576) return (s / 1024).toFixed(1) + " KB";
+        return (s / 1048576).toFixed(1) + " MB";
+      }
+
+      // parseToken：与 src/utils/netdisk-card.mjs 完全一致
+      function parseToken(raw) {
+        var parts = raw.split("#");
+        var basename = parts[0].trim();
+        var shareId = parts.length > 1 ? parts[1].trim() : null;
+        var code = parts.length > 2 ? parts[2].trim() : null;
+        return {
+          basename: basename,
+          url: shareId ? "https://pan.baidu.com/s/" + shareId : null,
+          code: code || null,
+        };
+      }
+
+      function findInManifest(basename) {
+        if (!manifest || !Array.isArray(manifest.files)) return null;
+        for (var i = 0; i < manifest.files.length; i++) {
+          if (manifest.files[i].basename === basename) return manifest.files[i];
+        }
+        return null;
+      }
+
+      function buildCard(entry) {
+        var name = esc(entry.basename);
+        var size = formatSize(entry.size);
+        var code = entry.code ? esc(entry.code) : "";
+        var meta = [size, code ? "提取码 " + code : null].filter(Boolean).join(" · ");
+        var linkHtml;
+        if (entry.link) {
+          linkHtml = '<a class="nd-btn baidu-btn" href="' + esc(entry.link) + '" target="_blank" rel="noopener">下载</a>';
+        } else {
+          linkHtml = '<a class="nd-btn nd-disabled" href="/disk/" title="分享链接尚未创建">待分享</a>';
+        }
+        var copyHtml = code
+          ? '<button class="nd-copy code-btn" type="button" data-code="' + code + '" title="点击复制提取码">提取码</button>'
+          : "";
+        return (
+          '<span class="nd-card"><span class="nd-ico">📦</span>' +
+          '<span class="nd-info"><span class="nd-name">' + name + '</span><span class="nd-meta">' + esc(meta) + '</span></span>' +
+          linkHtml + copyHtml + '</span>'
+        );
+      }
+
+      function buildMissing(name) {
+        return (
+          '<span class="nd-card nd-missing"><span class="nd-ico">⚠️</span>' +
+          '<span class="nd-info"><span class="nd-name">' + esc(name) + '</span><span class="nd-meta">网盘中未找到该文件</span></span>' +
+          '<a class="nd-btn" href="/disk/">查看网盘</a></span>'
+        );
+      }
+
+      // 在纯文本节点里替换 token → 卡片 HTML
+      function processTextNode(node) {
+        var text = node.nodeValue;
+        if (!text || !/{{/.test(text)) return;
+
+        var parent = node.parentNode;
+        if (!parent) return;
+
+        var parts = [];
+        var last = 0;
+        TOKEN_RE.lastIndex = 0;
+        var m;
+        while ((m = TOKEN_RE.exec(text)) !== null) {
+          var start = m.index;
+          if (start > last) parts.push(document.createTextNode(text.slice(last, start)));
+          var tokenContent = m[1];
+
+          // 扩展语法：文件名#分享ID#提取码
+          var parsed = parseToken(tokenContent);
+          var cardHtml;
+          if (parsed.url) {
+            cardHtml = buildCard({ basename: parsed.basename, size: 0, link: parsed.url, code: parsed.code });
+          } else {
+            // 标准语法：查清单
+            var entry = findInManifest(parsed.basename);
+            cardHtml = entry ? buildCard(entry) : buildMissing(parsed.basename);
+          }
+          var span = document.createElement("span");
+          span.innerHTML = cardHtml;
+          parts.push(span);
+          last = start + m[0].length;
+        }
+        if (last < text.length) parts.push(document.createTextNode(text.slice(last)));
+
+        // 替换原节点
+        var frag = document.createDocumentFragment();
+        for (var i = 0; i < parts.length; i++) frag.appendChild(parts[i]);
+        parent.replaceChild(frag, node);
+      }
+
+      // 递归遍历容器，处理所有纯文本节点（跳过 code/pre/script/style）
+      function processContainer(container) {
+        if (!container) return;
+        // 检查有没有未处理的 token（快速路径：没有 {{ 就跳过）
+        if (container.nodeType === 3 && container.nodeValue && container.nodeValue.indexOf("{{") >= 0) {
+          processTextNode(container);
+          return;
+        }
+        if (container.nodeType !== 1) return; // 只处理元素节点
+        var tag = container.tagName;
+        if (!tag) return;
+        // 跳过这些元素：里面的 {{ 应该原样保留
+        if (/^(CODE|PRE|SCRIPT|STYLE|TEXTAREA|NOSCRIPT)$/.test(tag)) return;
+        // 递归子节点（快照，避免修改时遍历器混乱）
+        var children = [];
+        for (var i = 0; i < container.childNodes.length; i++) {
+          children.push(container.childNodes[i]);
+        }
+        for (var i = 0; i < children.length; i++) {
+          processContainer(children[i]);
+        }
+      }
+
+      // 加载清单（静态 JSON，带 5 分钟缓存）
+      function loadManifest() {
+        if (manifest) return Promise.resolve(manifest);
+        if (loadManifest._pending) return loadManifest._pending;
+        loadManifest._pending = fetch("/data/netdisk.json", { cache: "no-cache" })
+          .then(function (r) { return r.ok ? r.json() : { files: [] }; })
+          .then(function (j) { manifest = j || { files: [] }; return manifest; })
+          .catch(function () { manifest = { files: [] }; return manifest; });
+        return loadManifest._pending;
+      }
+
+      // 提取码复制（预览 iframe 里的 nd-copy 按钮）
+      function bindCopyHandler(rootDoc) {
+        if (!rootDoc) rootDoc = document;
+        rootDoc.addEventListener("click", function (e) {
+          var target = e.target && e.target.closest ? e.target.closest(".nd-copy") : null;
+          if (!target) return;
+          var code = target.dataset.code || "";
+          var done = function () {
+            var old = target.textContent;
+            target.textContent = "✓ 已复制";
+            setTimeout(function () { target.textContent = old; }, 1500);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code).then(done).catch(function () {
+              var ta = document.createElement("textarea");
+              ta.value = code; ta.style.position = "fixed"; ta.style.opacity = "0";
+              document.body.appendChild(ta); ta.select();
+              try { document.execCommand("copy"); done(); } catch (err) {}
+              document.body.removeChild(ta);
+            });
+          } else {
+            var ta2 = document.createElement("textarea");
+            ta2.value = code; ta2.style.position = "fixed"; ta2.style.opacity = "0";
+            document.body.appendChild(ta2); ta2.select();
+            try { document.execCommand("copy"); done(); } catch (err) {}
+            document.body.removeChild(ta2);
+          }
+        });
+      }
+
+      // 监听预览 iframe 加载 + 内容变化
+      function attachPreviewObserver() {
+        // Decap 的预览在 iframe 里，等 iframe 加载完再操作
+        var iframes = document.querySelectorAll("iframe");
+        for (var i = 0; i < iframes.length; i++) {
+          (function (iframe) {
+            if (iframe[processedAttr]) return;
+            iframe[processedAttr] = "1";
+            function onLoad() {
+              try {
+                var doc = iframe.contentDocument || iframe.contentWindow.document;
+                var container = doc.querySelector(".prose") || doc.querySelector("article");
+                if (!container) return;
+                bindCopyHandler(doc);
+                loadManifest().then(function () {
+                  processContainer(container);
+                  // 持续监听（Decap 每次输入可能重建 DOM）
+                  var mo = new MutationObserver(function () {
+                    processContainer(container);
+                  });
+                  mo.observe(container, { childList: true, characterData: true, subtree: true });
+                });
+              } catch (e) {
+                // 跨域 iframe，跳过
+              }
+            }
+            if (iframe.contentDocument && iframe.contentDocument.readyState !== "loading") {
+              onLoad();
+            } else {
+              iframe.addEventListener("load", onLoad);
+            }
+          })(iframes[i]);
+        }
+      }
+
+      // 也处理顶层页面里的 .prose（管理页自己的 Markdown 预览）
+      function attachTopObserver() {
+        var containers = document.querySelectorAll(".prose");
+        for (var i = 0; i < containers.length; i++) {
+          (function (container) {
+            if (container[processedAttr]) return;
+            container[processedAttr] = "1";
+            loadManifest().then(function () {
+              processContainer(container);
+            });
+          })(containers[i]);
+        }
+      }
+
+      // 等待 Decap 就绪（不断有 iframe 被创建）
+      function start() {
+        bindCopyHandler(document);
+        // 周期性检查新 iframe（Decap 切换集合/条目时会销毁旧 iframe、创建新的）
+        attachPreviewObserver();
+        attachTopObserver();
+
+        // 持续监听页面变化（新 iframe 出现 → 新 preview 容器出现）
+        var bodyObserver = new MutationObserver(function () {
+          attachPreviewObserver();
+          attachTopObserver();
+        });
+        bodyObserver.observe(document.body, { childList: true, subtree: true });
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", start);
+      } else {
+        start();
+      }
+    })();
+    </script>
   </body>
 </html>
