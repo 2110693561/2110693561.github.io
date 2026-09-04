@@ -316,9 +316,9 @@
       </div>
 
       <div class="banner" id="rotate-banner">
-        百度返回了新的 refresh_token（旧的可能已失效）。请在本地终端执行
+        <span class="rotate-hint">百度返回了新的 refresh_token（旧的可能已失效）。请在本地终端执行
         <code>npx wrangler secret put BAIDU_REFRESH_TOKEN</code>
-        更新（新值在本地 .baidu-token.json 里），否则网盘接口稍后会失效。
+        更新（新值在本地 .baidu-token.json 里），否则网盘接口稍后会失效。</span>
       </div>
 
       <!-- 登录 -->
@@ -472,6 +472,12 @@
             throw new Error("登录已过期");
           }
           if (r.headers.get("x-baidu-rotated")) el.rotateBanner.style.display = "block";
+          var at = r.headers.get("x-baidu-access-token");
+          if (at) {
+            el.rotateBanner.querySelector(".rotate-hint").textContent =
+              "百度刷新了凭证。建议更新 Worker 的 BAIDU_ACCESS_TOKEN Secret（值为本次刷新的 access_token，已复制到剪贴板），更新后日常后台不再触发百度风控。";
+            try { navigator.clipboard.writeText(at); } catch (e) {}
+          }
           return r.json().then(function (j) {
             if (!r.ok) throw new Error((j && j.error) || "HTTP " + r.status);
             return j;
@@ -654,7 +660,13 @@
           }
           if (xhr.status >= 200 && xhr.status < 300 && j && j.ok) {
             setProgress(1);
-            el.rotateBanner.style.display = j.rotated ? "block" : el.rotateBanner.style.display;
+            if (j.rotated) el.rotateBanner.style.display = "block";
+            var upAt = xhr.getResponseHeader("x-baidu-access-token");
+            if (upAt) {
+              el.rotateBanner.querySelector(".rotate-hint").textContent =
+                "百度刷新了凭证。建议更新 Worker 的 BAIDU_ACCESS_TOKEN Secret（值已复制到剪贴板）。";
+              try { navigator.clipboard.writeText(upAt); } catch (e) {}
+            }
             setStatus(
               "上传完成：" + j.path + (j.rapid ? "（秒传命中，网盘已存在同内容文件）" : "") +
                 "。前台清单需等下一次同步回写。"

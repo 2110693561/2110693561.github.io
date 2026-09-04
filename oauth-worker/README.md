@@ -14,17 +14,19 @@ GitHub 的 OAuth 授权需要一个服务端，因此 GitHub Pages + Decap CMS �
    | --- | --- |
    | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | OAuth 登录（Decap + 网盘管理页共用） |
    | `GITHUB_ALLOWED_OWNER` | 网盘管理鉴权：允许的 GitHub 用户名（或数字 ID） |
-   | `BAIDU_APP_KEY` / `BAIDU_SECRET_KEY` | xpan 开放平台凭证（列目录 / 上传） |
-   | `BAIDU_REFRESH_TOKEN` | 本地 `.baidu-token.json` 里的值；若百度轮换，`/disk/*` 响应头会带 `x-baidu-rotated: 1` 提示重配 |
+   | `BAIDU_ACCESS_TOKEN` | **【推荐】** 直接用 access_token，跳过 OAuth 刷新（日常零风控）。30 天有效，从本地 `.baidu-token.json` 取值，过期前更新即可 |
+   | `BAIDU_APP_KEY` / `BAIDU_SECRET_KEY` | xpan 开放平台凭证（降级刷新用） |
+   | `BAIDU_REFRESH_TOKEN` | 降级用：`BAIDU_ACCESS_TOKEN` 未设或过期时自动刷新；百度风控拦截刷新接口时无法降级 |
    | `BAIDU_BDUSS`（可选 `BAIDU_STOKEN`） | 扫码登录凭证，创建分享用（`npm run baidu:login` 获取） |
 
    ```bash
    npx wrangler secret put GITHUB_CLIENT_ID
    npx wrangler secret put GITHUB_CLIENT_SECRET
    npx wrangler secret put GITHUB_ALLOWED_OWNER
+   npx wrangler secret put BAIDU_ACCESS_TOKEN        # 推荐：日常跳过刷新
    npx wrangler secret put BAIDU_APP_KEY
    npx wrangler secret put BAIDU_SECRET_KEY
-   npx wrangler secret put BAIDU_REFRESH_TOKEN
+   npx wrangler secret put BAIDU_REFRESH_TOKEN        # 降级备用
    npx wrangler secret put BAIDU_BDUSS
    npx wrangler secret put BAIDU_STOKEN
    npx wrangler deploy

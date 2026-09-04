@@ -81,12 +81,14 @@ export default {
 //   Authorization: Bearer <gh-token>；Worker 校验该 token 对应的 GitHub
 //   用户必须是 Secret GITHUB_ALLOWED_OWNER（用户名或数字 ID）才放行。
 // 百度凭证（均为 Secret）：
-//   BAIDU_APP_KEY / BAIDU_SECRET_KEY / BAIDU_REFRESH_TOKEN —— xpan 上传/列目录
+//   BAIDU_ACCESS_TOKEN —— 【推荐】直接用 access_token，跳过 OAuth 刷新，日常
+//     零风控风险。30 天有效，过期前从本地 .baidu-token.json 取新值更新即可。
+//   BAIDU_APP_KEY / BAIDU_SECRET_KEY / BAIDU_REFRESH_TOKEN —— 【降级】当
+//     BAIDU_ACCESS_TOKEN 未设或过期（xpan 报 errno=-6）时自动刷新；但百度
+//     安全策略可能临时拦截刷新接口（Trigger security policy）。
 //   BAIDU_BDUSS（可选 BAIDU_STOKEN）—— 网页端内部接口创建分享
-// BAIDU_REFRESH_TOKEN 长期有效但可能轮换：若百度返回了新值，响应头会带
-//   x-baidu-rotated: 1，管理页显示横幅提醒重新 `wrangler secret put`。
-// 注意：Worker 无法 import scripts/baidu-sync.mjs（Node 脚本），分享/上传
-// 逻辑为有意重复的移植版。
+// 轮换提示：刷新走 refresh_token 时，若百度返回新值，响应头带 x-baidu-rotated:
+//   1 + x-baidu-access-token:<新值>，管理页显示横幅提醒更新 Secret。
 
 const BAIDU_XPAN = "https://pan.baidu.com/rest/2.0/xpan";
 const BAIDU_PCS = "https://d.pcs.baidu.com/rest/2.0/pcs/superfile2";
@@ -124,7 +126,7 @@ function allowOrigin(request, env) {
 async function handleDisk(request, env, url) {
   const origin = allowOrigin(request, env);
   const cors = origin
-    ? { "Access-Control-Allow-Origin": origin, "Access-Control-Expose-Headers": "x-baidu-rotated", Vary: "Origin" }
+    ? { "Access-Control-Allow-Origin": origin, "Access-Control-Expose-Headers": "x-baidu-rotated, x-baidu-access-token", Vary: "Origin" }
     : {};
 
   if (request.method === "OPTIONS") {
@@ -163,6 +165,9 @@ async function handleDisk(request, env, url) {
 
     const extra = {};
     if (result && result.rotated) extra["x-baidu-rotated"] = "1";
+    if (result && result.source === "refresh" && result.newAccessToken) {
+      extra["x-baidu-access-token"] = result.newAccessToken;
+    }
     return json({ ok: true, ...result }, 200, extra);
   } catch (e) {
     const status = e && e.status ? e.status : 500;
@@ -191,38 +196,60 @@ async function verifyOwner(request, env) {
   return j.login;
 }
 
-/** refresh_token 换 access_token（模块级缓存）；返回 { token, rotated } */
-async function getBaiduToken(env) {
-  const now = Date.now();
-  if (baiduTokenCache && baiduTokenCache.expiresAt > now + 60_000) {
-    return { token: baiduTokenCache.accessToken, rotated: false };
+/** 获取百度 access_token（模块级缓存）；返回 { token, rotated, source, newAccessToken? }
+ *  - 优先用 BAIDU_ACCESS_TOKEN Secret（跳过 OAuth 刷新，避免触发百度风控）
+ *  - access_token 过期或未设置时降级到 refresh_token 刷新
+ *  - forceRefresh=true 强制走刷新流程（xpan 报 errno=-6 时调用方触发降级） */
+async function getBaiduToken(env, { forceRefresh = false } = {}) {
+  // Phase 1：直接用 access_token Secret（日常零 OAuth 调用，风控概率最低）
+  if (!forceRefresh && env.BAIDU_ACCESS_TOKEN) {
+    return { token: env.BAIDU_ACCESS_TOKEN, rotated: false, source: "direct" };
   }
+  const now = Date.now();
+  // Phase 2：刷新流程的模块级缓存命中
+  if (!forceRefresh && baiduTokenCache && baiduTokenCache.expiresAt > now + 60_000) {
+    return { token: baiduTokenCache.accessToken, rotated: false, source: "refresh" };
+  }
+  // Phase 3：refresh_token 换 access_token
   const appKey = env.BAIDU_APP_KEY;
   const secret = env.BAIDU_SECRET_KEY;
   const rt = env.BAIDU_REFRESH_TOKEN;
   if (!appKey || !secret || !rt) {
-    throw httpError(500, "Worker 缺少百度凭证 Secret：BAIDU_APP_KEY / BAIDU_SECRET_KEY / BAIDU_REFRESH_TOKEN");
+    throw httpError(500, "Worker 缺少百度凭证：请设置 BAIDU_ACCESS_TOKEN（跳过刷新）或 BAIDU_APP_KEY + BAIDU_SECRET_KEY + BAIDU_REFRESH_TOKEN（自动刷新）");
   }
   const u = `https://openapi.baidu.com/oauth/2.0/token?grant_type=refresh_token&refresh_token=${encodeURIComponent(rt)}&client_id=${encodeURIComponent(appKey)}&client_secret=${encodeURIComponent(secret)}`;
   const res = await fetch(u);
   const j = await res.json().catch(() => null);
   if (!j || !j.access_token) {
-    throw httpError(502, `刷新百度 access_token 失败：${j ? JSON.stringify(j).slice(0, 200) : "非 JSON 响应"}`);
+    const detail = j ? JSON.stringify(j).slice(0, 200) : "非 JSON 响应";
+    const hint = j && j.error === "Trigger security policy"
+      ? "（百度安全策略临时拦截：请设 BAIDU_ACCESS_TOKEN Secret 跳过刷新，本地从 .baidu-token.json 取值，或稍后重试）"
+      : "";
+    throw httpError(502, `刷新百度 access_token 失败：${detail}${hint}`);
   }
   baiduTokenCache = { accessToken: j.access_token, expiresAt: now + (Number(j.expires_in) || 2_592_000) * 1000 };
-  // 百度可能轮换 refresh_token（旧值作废）——Worker 无法持久化，只能提示重配
   const rotated = Boolean(j.refresh_token && j.refresh_token !== rt);
-  return { token: j.access_token, rotated };
+  return { token: j.access_token, rotated, source: "refresh", newAccessToken: j.access_token };
 }
 
 /** GET /disk/list：网盘目录 + 公开清单合并（显示分享状态） */
 async function diskList(env) {
-  const { token, rotated } = await getBaiduToken(env);
+  let tr = await getBaiduToken(env);
+  let { token, rotated, source } = tr;
   const dir = env.BAIDU_DIR || "/apps/mynote";
-  const res = await fetch(
+  let res = await fetch(
     `${BAIDU_XPAN}/file?method=list&access_token=${encodeURIComponent(token)}&dir=${encodeURIComponent(dir)}&order=name&web=1`
   );
-  const j = await res.json().catch(() => null);
+  let j = await res.json().catch(() => null);
+  // access_token 过期时 xpan 报 errno=-6：降级到 refresh_token 刷新后重试一次
+  if (source === "direct" && j && j.errno === -6 && env.BAIDU_REFRESH_TOKEN) {
+    tr = await getBaiduToken(env, { forceRefresh: true });
+    token = tr.token; rotated = tr.rotated; source = tr.source;
+    res = await fetch(
+      `${BAIDU_XPAN}/file?method=list&access_token=${encodeURIComponent(token)}&dir=${encodeURIComponent(dir)}&order=name&web=1`
+    );
+    j = await res.json().catch(() => null);
+  }
   if (!j || j.errno !== 0) {
     throw httpError(502, `网盘目录读取失败 errno=${j ? j.errno : "非 JSON 响应"}${j && j.errno === -9 ? "（目录不存在，先在网盘建好应用目录）" : ""}`);
   }
@@ -253,7 +280,7 @@ async function diskList(env) {
     f.link = l ? l.link : null;
     f.code = l ? l.code : null;
   }
-  return { dir, files, rotated };
+  return { dir, files, rotated, source, newAccessToken: tr.newAccessToken };
 }
 
 /** POST /disk/share  body {fsId}：网页端内部接口创建带提取码分享 */
@@ -316,7 +343,8 @@ async function diskUpload(env, request) {
   if (file.size > MAX_UPLOAD) throw httpError(413, `文件 ${formatSize(file.size)} 超过 ${MAX_UPLOAD / 1048576}MB 上限，请用本地 npm run baidu:sync`);
   if (file.size === 0) throw httpError(400, "不能上传空文件");
 
-  const { token, rotated } = await getBaiduToken(env);
+  let tr = await getBaiduToken(env);
+  let { token, rotated, source } = tr;
   const dir = env.BAIDU_DIR || "/apps/mynote";
   const name = String(file.name || "upload.bin").replace(/[/\\]/g, "_");
   const remotePath = `${dir}/${name}`;
@@ -339,15 +367,27 @@ async function diskUpload(env, request) {
   };
 
   // 1) 预创建（命中秒传 return_type=2 直接结束）
-  const pre = await postForm(`${BAIDU_XPAN}/file?method=precreate&access_token=${encodeURIComponent(token)}`, {
+  let pre = await postForm(`${BAIDU_XPAN}/file?method=precreate&access_token=${encodeURIComponent(token)}`, {
     path: remotePath,
     size: String(buf.length),
     isdir: "0",
     autoinit: "1",
     block_list: JSON.stringify(md5s),
   });
+  // access_token 过期时 xpan 报 errno=-6：降级到 refresh_token 刷新后重试
+  if (source === "direct" && pre && pre.errno === -6 && env.BAIDU_REFRESH_TOKEN) {
+    tr = await getBaiduToken(env, { forceRefresh: true });
+    token = tr.token; rotated = tr.rotated; source = tr.source;
+    pre = await postForm(`${BAIDU_XPAN}/file?method=precreate&access_token=${encodeURIComponent(token)}`, {
+      path: remotePath,
+      size: String(buf.length),
+      isdir: "0",
+      autoinit: "1",
+      block_list: JSON.stringify(md5s),
+    });
+  }
   if (!pre || pre.errno !== 0) throw httpError(502, `预创建失败 errno=${pre ? pre.errno : "非 JSON 响应"}`);
-  if (pre.return_type === 2) return { path: remotePath, size: buf.length, rapid: true, rotated };
+  if (pre.return_type === 2) return { path: remotePath, size: buf.length, rapid: true, rotated, source, newAccessToken: tr.newAccessToken };
 
   // 2) 逐片上传（tmpfile）
   const uploadid = pre.uploadid;
@@ -373,7 +413,7 @@ async function diskUpload(env, request) {
     uploadid: String(uploadid),
   });
   if (!fin || fin.errno !== 0) throw httpError(502, `文件创建失败 errno=${fin ? fin.errno : "非 JSON 响应"}`);
-  return { path: remotePath, size: buf.length, rapid: false, rotated };
+  return { path: remotePath, size: buf.length, rapid: false, rotated, source, newAccessToken: tr.newAccessToken };
 }
 
 function formatSize(s) {
