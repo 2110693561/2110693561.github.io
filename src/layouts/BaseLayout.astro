@@ -154,6 +154,37 @@ const faviconSrc = assetPath(SITE.favicon);
         document.documentElement.dataset.theme = next;
         localStorage.setItem("theme", next);
       });
+
+      // 文章内嵌网盘卡片（remark-netdisk 生成）：提取码点击复制（事件委托，覆盖所有页面）
+      document.addEventListener("click", async (e) => {
+        const target = e.target instanceof Element ? e.target.closest(".nd-copy") : null;
+        if (!target) return;
+        const copyBtn = target as HTMLElement;
+        const code = copyBtn.dataset.code || "";
+        const done = () => {
+          const old = copyBtn.textContent;
+          copyBtn.textContent = "✓ 已复制";
+          setTimeout(() => (copyBtn.textContent = old), 1500);
+        };
+        try {
+          await navigator.clipboard.writeText(code);
+          done();
+        } catch {
+          const ta = document.createElement("textarea");
+          ta.value = code;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            document.execCommand("copy");
+            done();
+          } catch {
+            copyBtn.textContent = `提取码：${code}`;
+          }
+          document.body.removeChild(ta);
+        }
+      });
     </script>
   </body>
 </html>

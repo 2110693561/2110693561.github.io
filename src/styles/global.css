@@ -615,3 +615,96 @@ a.card:hover h3 { color: var(--accent); }
   .site-footer { margin-top: 44px; }
   .site-footer .inner { flex-direction: column; align-items: flex-start; gap: 8px; }
 }
+
+/* ---------- 百度网盘按钮与提取码按钮（资料页 / 网盘页 / 文章下载卡片共用） ---------- */
+.baidu-btn {
+  color: #fff;
+  background: #06a7ff;
+  border-color: #06a7ff;
+  text-decoration: none;
+}
+.baidu-btn:hover,
+.baidu-btn:focus {
+  background: #0095e6;
+  border-color: #0095e6;
+  color: #fff;
+}
+.code-btn {
+  font-family: ui-monospace, Consolas, "Courier New", monospace;
+  letter-spacing: 0.06em;
+  border-style: dashed;
+}
+
+/* ---------- 文件行布局（资料页 / 网盘页共用） ---------- */
+.file-item { padding: 8px 0 0; margin-top: 8px; border-top: 1px dashed var(--border); }
+.file-row { display: flex; align-items: center; gap: 12px; }
+.file-badge {
+  flex: none;
+  min-width: 52px;
+  text-align: center;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.file-actions { flex: none; display: flex; gap: 8px; }
+.file-actions .btn { padding: 5px 14px; font-size: 13px; cursor: pointer; }
+
+/* ---------- 文章内嵌网盘下载卡片（remark-netdisk 生成） ---------- */
+.nd-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin: 4px 2px;
+  vertical-align: middle;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  max-width: 100%;
+}
+.nd-ico { flex: none; font-size: 18px; line-height: 1; }
+.nd-info { display: flex; flex-direction: column; min-width: 0; }
+.nd-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nd-meta { font-size: 12px; color: var(--muted); }
+.nd-btn {
+  flex: none;
+  padding: 4px 12px;
+  font-size: 12.5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.nd-btn:hover { border-color: var(--accent); color: var(--accent); }
+.nd-btn.baidu-btn { background: #06a7ff; }
+.nd-btn.baidu-btn:hover, .nd-btn.baidu-btn:focus { background: #0095e6; color: #fff; }
+.nd-btn.nd-disabled { color: var(--muted); border-style: dotted; cursor: default; }
+.nd-btn.nd-disabled:hover { border-color: var(--border); color: var(--muted); }
+.nd-card.nd-missing { border-style: dashed; }
+.nd-card.nd-missing .nd-name { color: var(--muted); font-weight: 500; }
+@media (max-width: 640px) {
+  .nd-name { max-width: 52vw; }
+  .nd-card { flex-wrap: wrap; }
+}

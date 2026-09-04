@@ -1,11 +1,28 @@
-# Cloudflare Worker 配置：Decap CMS 的 GitHub OAuth 代理
-# 部署：
+# Cloudflare Worker 配置：Decap CMS 的 GitHub OAuth 代理 + 网盘管理（/disk/*）
+# 部署（本地终端执行）：
 #   npx wrangler login
 #   npx wrangler secret put GITHUB_CLIENT_ID
 #   npx wrangler secret put GITHUB_CLIENT_SECRET
+#   # —— 网盘管理端点（/disk/*）所需 Secret ——
+#   npx wrangler secret put GITHUB_ALLOWED_OWNER     # 值 = 你的 GitHub 用户名（或数字 ID）
+#   npx wrangler secret put BAIDU_APP_KEY            # 开放平台 AppKey
+#   npx wrangler secret put BAIDU_SECRET_KEY         # 开放平台 SecretKey
+#   npx wrangler secret put BAIDU_REFRESH_TOKEN      # 本地 .baidu-token.json 里的 refresh_token
+#   npx wrangler secret put BAIDU_BDUSS              # 扫码登录凭证（创建分享用，npm run baidu:login 获取）
+#   npx wrangler secret put BAIDU_STOKEN             # 可选，与 BDUSS 配套
 #   npx wrangler deploy
 # 部署完成后把 Worker 地址填入 public/admin/config.yml 的 base_url
+#
+# vars（下方 [vars]）非敏感，直接改这里重新 deploy 即可：
+#   BAIDU_DIR         网盘应用目录
+#   MANIFEST_RAW_URL  公开清单地址，/disk/list 合并分享状态用（拉不到不影响列表）
+# 若百度轮换 refresh_token，/disk/* 响应会带 x-baidu-rotated: 1，
+# 重新 wrangler secret put BAIDU_REFRESH_TOKEN 后即恢复。
 
 name = "decap-oauth-worker"
 main = "src/index.js"
 compatibility_date = "2026-01-01"
+
+[vars]
+BAIDU_DIR = "/apps/mynote"
+MANIFEST_RAW_URL = "https://raw.githubusercontent.com/2110693561/2110693561.github.io/main/src/data/netdisk.json"

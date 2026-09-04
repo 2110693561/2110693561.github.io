@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # 网盘同步回写分享链接后需要提交
   pages: write
   id-token: write
 
@@ -26,6 +26,37 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      # 上传附件到百度网盘 → 自动创建分享 → 把链接/提取码回写进 src/files/*.md
+      # 网盘侧任何失败都不应阻塞站点部署，所以 continue-on-error
+      - name: Baidu netdisk sync
+        continue-on-error: true
+        env:
+          BAIDU_APP_KEY: ${{ secrets.BAIDU_APP_KEY }}
+          BAIDU_SECRET_KEY: ${{ secrets.BAIDU_SECRET_KEY }}
+          BAIDU_REFRESH_TOKEN: ${{ secrets.BAIDU_REFRESH_TOKEN }}
+          BAIDU_BDUSS: ${{ secrets.BAIDU_BDUSS }}
+          BAIDU_STOKEN: ${{ secrets.BAIDU_STOKEN }}
+          BAIDU_SHARE_PERIOD: ${{ secrets.BAIDU_SHARE_PERIOD }}
+        run: |
+          if [ -z "$BAIDU_APP_KEY" ]; then
+            echo "⚠️ 未配置百度 Secrets（BAIDU_APP_KEY 等），跳过网盘同步"
+            exit 0
+          fi
+          node scripts/baidu-sync.mjs
+
+      # 回写产生的变更直接提交（GITHUB_TOKEN 的 push 不会再次触发本工作流，无死循环）
+      - name: Commit share links
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/files src/data/netdisk.json
+          if git diff --cached --quiet; then
+            echo "没有需要提交的分享链接/网盘清单变更"
+          else
+            git commit -m "chore: 回写百度网盘分享链接并更新网盘清单（baidu-sync）"
+            git push
+          fi
 
       - name: Install
         run: npm ci

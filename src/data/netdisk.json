@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "remoteDir": "/apps/mynote",
+  "files": [
+    {
+      "basename": "4ef89d4f2ea45a5700dd715686fcee66.jpg",
+      "size": 995187,
+      "fsId": 576371696302116,
+      "md5": "9900927f7u69ed4386a77cd6132e2dac",
+      "link": "https://pan.baidu.com/s/1Ejs8hHQRwJKlK0IuzPgiJA",
+      "code": "sqhb",
+      "source": "md",
+      "updatedAt": "2026-09-03T17:43:39.472Z"
+    },
+    {
+      "basename": "7eeb789d0c65399e92135e03cef54558.jpg",
+      "size": 75241,
+      "fsId": 435975121477531,
+      "md5": "2684532d6tf0189ea1ef15f0d3abeea6",
+      "link": "https://pan.baidu.com/s/1SmyBCaEYkSEVRxyTYHo6pg",
+      "code": "m2c0",
+      "source": "md",
+      "updatedAt": "2026-09-03T17:43:39.472Z"
+    }
+  ],
+  "generatedAt": "2026-09-04T04:00:53.659Z"
+}

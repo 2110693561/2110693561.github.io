@@ -175,5 +175,15 @@ collections:
             widget: file
             choose_url: true
             required: true
+          - name: baidu
+            label: 百度网盘链接（备用下载源，可选）
+            widget: string
+            required: false
+            hint: 网盘「分享」得到的链接，如 https://pan.baidu.com/s/1xxxx；留空则只显示站内下载按钮。也可由 scripts/baidu-sync.mjs 自动回写
+          - name: code
+            label: 网盘提取码（可选）
+            widget: string
+            required: false
+            hint: 分享链接的 4 位提取码，无密码可留空
       - { name: description, label: 说明（可选）, widget: text, required: false }
       - { name: hidden, label: 隐藏（不在资料页显示）, widget: boolean, default: false, required: false }

@@ -66,6 +66,368 @@ export default {
       return new Response(html, { headers: {"content-type":"text/html;charset=UTF-8"} });
     }
 
+    // ---------- 网盘管理端点（/disk/*，供 /admin/disk/ 管理页调用） ----------
+    if (url.pathname.startsWith("/disk/")) {
+      return handleDisk(request, env, url);
+    }
+
     return new Response("Not Found", { status: 404 });
   }
 };
+
+// ==================== /disk/* 网盘管理 ====================
+//
+// 鉴权：管理页复用 Decap 同款 GitHub OAuth 弹窗拿 token，请求头
+//   Authorization: Bearer <gh-token>；Worker 校验该 token 对应的 GitHub
+//   用户必须是 Secret GITHUB_ALLOWED_OWNER（用户名或数字 ID）才放行。
+// 百度凭证（均为 Secret）：
+//   BAIDU_APP_KEY / BAIDU_SECRET_KEY / BAIDU_REFRESH_TOKEN —— xpan 上传/列目录
+//   BAIDU_BDUSS（可选 BAIDU_STOKEN）—— 网页端内部接口创建分享
+// BAIDU_REFRESH_TOKEN 长期有效但可能轮换：若百度返回了新值，响应头会带
+//   x-baidu-rotated: 1，管理页显示横幅提醒重新 `wrangler secret put`。
+// 注意：Worker 无法 import scripts/baidu-sync.mjs（Node 脚本），分享/上传
+// 逻辑为有意重复的移植版。
+
+const BAIDU_XPAN = "https://pan.baidu.com/rest/2.0/xpan";
+const BAIDU_PCS = "https://d.pcs.baidu.com/rest/2.0/pcs/superfile2";
+const WEB_SHARE = "https://pan.baidu.com/share/set";
+const WEB_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+const SLICE_SIZE = 8 * 1024 * 1024; // xpan 分片要求 4MB 的整数倍
+const MAX_UPLOAD = 64 * 1024 * 1024; // Workers 免费档单请求 128MB 内存，64MB 留足余量
+
+// CORS 白名单：站点本身 + 本地 CMS（npm run cms）+ wrangler dev
+const CORS_LOCAL = ["http://localhost:8080", "http://127.0.0.1:8787"];
+
+// 网页端分享接口错误码 → 提示（与 baidu-sync.mjs WEB_SHARE_ERRNO 同源）
+const WEB_SHARE_ERRNO = {
+  "-6": "登录状态失效——BAIDU_BDUSS 不对或已过期，请重新 npm run baidu:login",
+  "2": "参数错误（接口可能已变更）",
+  "4": "无权限",
+  "12": "文件涉及违规内容被禁止分享",
+  "105": "分享链接错误",
+  "130": "分享次数达到上限",
+};
+
+const httpError = (status, msg) => Object.assign(new Error(msg), { status });
+
+let baiduTokenCache = null; // { accessToken, expiresAt }（模块级，实例存续期间复用）
+
+function allowOrigin(request, env) {
+  const origin = request.headers.get("Origin") || "";
+  const owner = String(env.GITHUB_ALLOWED_OWNER || "").trim().toLowerCase();
+  const site = owner ? `https://${owner}.github.io` : "";
+  if (site && origin === site) return origin;
+  if (CORS_LOCAL.includes(origin)) return origin;
+  return "";
+}
+
+async function handleDisk(request, env, url) {
+  const origin = allowOrigin(request, env);
+  const cors = origin
+    ? { "Access-Control-Allow-Origin": origin, "Access-Control-Expose-Headers": "x-baidu-rotated", Vary: "Origin" }
+    : {};
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...cors,
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Access-Control-Max-Age": "86400",
+      },
+    });
+  }
+
+  const json = (data, status = 200, extra = {}) =>
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { "content-type": "application/json", "cache-control": "no-store", ...cors, ...extra },
+    });
+
+  try {
+    // 除 OPTIONS 外一律先做 GitHub 归属校验
+    const login = await verifyOwner(request, env);
+    if (!login) return json({ error: "GitHub 鉴权失败：请先登录，且账号须为站点所有者（GITHUB_ALLOWED_OWNER）" }, 401);
+
+    let result;
+    if (url.pathname === "/disk/list" && request.method === "GET") {
+      result = await diskList(env);
+    } else if (url.pathname === "/disk/share" && request.method === "POST") {
+      result = await diskShare(env, request);
+    } else if (url.pathname === "/disk/upload" && request.method === "POST") {
+      result = await diskUpload(env, request);
+    } else {
+      return json({ error: "Not Found" }, 404);
+    }
+
+    const extra = {};
+    if (result && result.rotated) extra["x-baidu-rotated"] = "1";
+    return json({ ok: true, ...result }, 200, extra);
+  } catch (e) {
+    const status = e && e.status ? e.status : 500;
+    return json({ error: (e && e.message) || "内部错误" }, status);
+  }
+}
+
+/** GitHub token → 用户名，必须是 GITHUB_ALLOWED_OWNER（用户名或数字 ID） */
+async function verifyOwner(request, env) {
+  const auth = request.headers.get("Authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!token) return null;
+  const owner = String(env.GITHUB_ALLOWED_OWNER || "").trim();
+  if (!owner) return null; // 未配置 Secret 一律拒绝
+  const res = await fetch("https://api.github.com/user", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "mynote-disk-admin",
+    },
+  });
+  if (!res.ok) return null;
+  const j = await res.json().catch(() => null);
+  if (!j || !j.login) return null;
+  if (String(j.login).toLowerCase() !== owner.toLowerCase() && String(j.id) !== owner) return null;
+  return j.login;
+}
+
+/** refresh_token 换 access_token（模块级缓存）；返回 { token, rotated } */
+async function getBaiduToken(env) {
+  const now = Date.now();
+  if (baiduTokenCache && baiduTokenCache.expiresAt > now + 60_000) {
+    return { token: baiduTokenCache.accessToken, rotated: false };
+  }
+  const appKey = env.BAIDU_APP_KEY;
+  const secret = env.BAIDU_SECRET_KEY;
+  const rt = env.BAIDU_REFRESH_TOKEN;
+  if (!appKey || !secret || !rt) {
+    throw httpError(500, "Worker 缺少百度凭证 Secret：BAIDU_APP_KEY / BAIDU_SECRET_KEY / BAIDU_REFRESH_TOKEN");
+  }
+  const u = `https://openapi.baidu.com/oauth/2.0/token?grant_type=refresh_token&refresh_token=${encodeURIComponent(rt)}&client_id=${encodeURIComponent(appKey)}&client_secret=${encodeURIComponent(secret)}`;
+  const res = await fetch(u);
+  const j = await res.json().catch(() => null);
+  if (!j || !j.access_token) {
+    throw httpError(502, `刷新百度 access_token 失败：${j ? JSON.stringify(j).slice(0, 200) : "非 JSON 响应"}`);
+  }
+  baiduTokenCache = { accessToken: j.access_token, expiresAt: now + (Number(j.expires_in) || 2_592_000) * 1000 };
+  // 百度可能轮换 refresh_token（旧值作废）——Worker 无法持久化，只能提示重配
+  const rotated = Boolean(j.refresh_token && j.refresh_token !== rt);
+  return { token: j.access_token, rotated };
+}
+
+/** GET /disk/list：网盘目录 + 公开清单合并（显示分享状态） */
+async function diskList(env) {
+  const { token, rotated } = await getBaiduToken(env);
+  const dir = env.BAIDU_DIR || "/apps/mynote";
+  const res = await fetch(
+    `${BAIDU_XPAN}/file?method=list&access_token=${encodeURIComponent(token)}&dir=${encodeURIComponent(dir)}&order=name&web=1`
+  );
+  const j = await res.json().catch(() => null);
+  if (!j || j.errno !== 0) {
+    throw httpError(502, `网盘目录读取失败 errno=${j ? j.errno : "非 JSON 响应"}${j && j.errno === -9 ? "（目录不存在，先在网盘建好应用目录）" : ""}`);
+  }
+  const files = (j.list || [])
+    .filter((f) => !f.isdir)
+    .map((f) => ({
+      fsId: f.fs_id,
+      basename: f.server_filename || String(f.path || "").split("/").pop(),
+      size: f.size,
+      md5: f.md5 || "",
+    }));
+
+  // 合并公开清单（raw.githubusercontent.com），补分享链接状态；失败不致命
+  let links = {};
+  const rawUrl = env.MANIFEST_RAW_URL;
+  if (rawUrl) {
+    try {
+      const m = await (await fetch(`${rawUrl}?t=${Date.now()}`, { headers: { "User-Agent": "mynote-disk-admin" } })).json();
+      if (m && Array.isArray(m.files)) {
+        links = Object.fromEntries(m.files.map((f) => [f.basename, { link: f.link || null, code: f.code || null }]));
+      }
+    } catch {
+      /* 清单拉取失败仅影响“分享状态”展示 */
+    }
+  }
+  for (const f of files) {
+    const l = links[f.basename];
+    f.link = l ? l.link : null;
+    f.code = l ? l.code : null;
+  }
+  return { dir, files, rotated };
+}
+
+/** POST /disk/share  body {fsId}：网页端内部接口创建带提取码分享 */
+async function diskShare(env, request) {
+  const bduss = env.BAIDU_BDUSS;
+  if (!bduss) throw httpError(500, "Worker 缺少 BAIDU_BDUSS Secret（分享走网页端接口，需要扫码登录凭证）");
+  if (bduss.length < 100) throw httpError(500, "BAIDU_BDUSS 长度不足（应为 ~190 字符），请重新 npm run baidu:login 后 wrangler secret put");
+  const stoken = env.BAIDU_STOKEN || "";
+  const period = env.BAIDU_SHARE_PERIOD || "0";
+  const cookie = stoken ? `BDUSS=${bduss}; STOKEN=${stoken}` : `BDUSS=${bduss}`;
+
+  let fsId;
+  try {
+    fsId = Number((await request.json()).fsId);
+  } catch {
+    fsId = NaN;
+  }
+  if (!Number.isFinite(fsId) || fsId <= 0) throw httpError(400, "缺少有效的 fsId");
+
+  // 创建私密分享（4 位提取码）
+  // 注意：2026 版网页端后 share/set 对 bdstoken 不再强制校验，传空字符串即可成功；
+  // BDUSS 无效时接口会直接返回 errno=-6，错误映射提示用户重新扫码。
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const pwd = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+    .map((n) => alphabet[n % alphabet.length])
+    .join("");
+  const body = new URLSearchParams({
+    fid_list: JSON.stringify([fsId]), // 网页端要求数字数组
+    schannel: "4", // 私密分享（带提取码）
+    channel_list: "[]",
+    period: String(period), // 0 = 永久（非会员受限时可设 BAIDU_SHARE_PERIOD=30）
+    pwd,
+    bdstoken: "", // 新版 share/set 不强制校验此字段，留空即可
+  });
+  const res = await fetch(`${WEB_SHARE}?channel=chunlei&clienttype=0&web=1`, {
+    method: "POST",
+    headers: {
+      Cookie: cookie,
+      "User-Agent": WEB_UA,
+      Referer: "https://pan.baidu.com/disk/main",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: body.toString(),
+  });
+  const j = await res.json().catch(() => null);
+  if (!j || j.errno !== 0) {
+    const hint = WEB_SHARE_ERRNO[String(j && j.errno)] || `未知错误 errno=${j ? j.errno : "非 JSON 响应"}`;
+    throw httpError(502, `创建分享失败：${hint}`);
+  }
+  const link = j.link || (j.shorturl ? `https://pan.baidu.com/s/${j.shorturl}` : null);
+  if (!link) throw httpError(502, "分享接口未返回链接");
+  return { fsId, link, code: pwd };
+}
+
+/** POST /disk/upload  multipart/form-data：file（单文件 ≤64MB）→ precreate/秒传/分片/create */
+async function diskUpload(env, request) {
+  const form = await request.formData().catch(() => null);
+  const file = form && form.get("file");
+  if (!file || typeof file === "string") throw httpError(400, "缺少 file 字段（multipart/form-data）");
+  if (file.size > MAX_UPLOAD) throw httpError(413, `文件 ${formatSize(file.size)} 超过 ${MAX_UPLOAD / 1048576}MB 上限，请用本地 npm run baidu:sync`);
+  if (file.size === 0) throw httpError(400, "不能上传空文件");
+
+  const { token, rotated } = await getBaiduToken(env);
+  const dir = env.BAIDU_DIR || "/apps/mynote";
+  const name = String(file.name || "upload.bin").replace(/[/\\]/g, "_");
+  const remotePath = `${dir}/${name}`;
+
+  // 分片 + 每片 MD5（WebCrypto 无 MD5，用内联纯 JS 实现）
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const slices = [];
+  for (let off = 0; off < buf.length; off += SLICE_SIZE) {
+    slices.push(buf.subarray(off, Math.min(off + SLICE_SIZE, buf.length)));
+  }
+  const md5s = slices.map((s) => md5Hex(s));
+
+  const postForm = async (url, fields) => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(fields).toString(),
+    });
+    return res.json().catch(() => null);
+  };
+
+  // 1) 预创建（命中秒传 return_type=2 直接结束）
+  const pre = await postForm(`${BAIDU_XPAN}/file?method=precreate&access_token=${encodeURIComponent(token)}`, {
+    path: remotePath,
+    size: String(buf.length),
+    isdir: "0",
+    autoinit: "1",
+    block_list: JSON.stringify(md5s),
+  });
+  if (!pre || pre.errno !== 0) throw httpError(502, `预创建失败 errno=${pre ? pre.errno : "非 JSON 响应"}`);
+  if (pre.return_type === 2) return { path: remotePath, size: buf.length, rapid: true, rotated };
+
+  // 2) 逐片上传（tmpfile）
+  const uploadid = pre.uploadid;
+  if (!uploadid) throw httpError(502, "预创建未返回 uploadid");
+  for (let i = 0; i < slices.length; i++) {
+    const fd = new FormData();
+    fd.append("file", new Blob([slices[i]]), name);
+    const u = `${BAIDU_PCS}?method=upload&access_token=${encodeURIComponent(token)}&type=tmpfile&path=${encodeURIComponent(remotePath)}&uploadid=${encodeURIComponent(uploadid)}&partseq=${i}`;
+    const r = await fetch(u, { method: "POST", body: fd });
+    const j = await r.json().catch(() => null);
+    // superfile2 成功响应不含 errno，只返回 md5；出错时才会有非零 errno
+    if (!j || (j.errno !== undefined && j.errno !== 0) || !j.md5) {
+      throw httpError(502, `分片 ${i + 1}/${slices.length} 上传失败 ${j ? JSON.stringify(j).slice(0, 160) : ""}`);
+    }
+  }
+
+  // 3) 合并分片（create）
+  const fin = await postForm(`${BAIDU_XPAN}/file?method=create&access_token=${encodeURIComponent(token)}`, {
+    path: remotePath,
+    size: String(buf.length),
+    isdir: "0",
+    block_list: JSON.stringify(md5s),
+    uploadid: String(uploadid),
+  });
+  if (!fin || fin.errno !== 0) throw httpError(502, `文件创建失败 errno=${fin ? fin.errno : "非 JSON 响应"}`);
+  return { path: remotePath, size: buf.length, rapid: false, rotated };
+}
+
+function formatSize(s) {
+  if (!Number.isFinite(s) || s <= 0) return "0 B";
+  if (s < 1024) return `${s} B`;
+  if (s < 1048576) return `${(s / 1024).toFixed(1)} KB`;
+  if (s < 1073741824) return `${(s / 1048576).toFixed(1)} MB`;
+  return `${(s / 1073741824).toFixed(2)} GB`;
+}
+
+// ---------- 纯 JS MD5（WebCrypto 不提供 MD5；已与 node:crypto 对拍验证） ----------
+function md5Hex(bytes) {
+  const S = [
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+    5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+  ];
+  const K = new Int32Array(64);
+  for (let i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296);
+
+  const len = bytes.length;
+  const paddedLen = (((len + 8) >> 6) + 1) << 6;
+  const buf = new Uint8Array(paddedLen);
+  buf.set(bytes);
+  buf[len] = 0x80;
+  const dv = new DataView(buf.buffer);
+  dv.setUint32(paddedLen - 8, (len << 3) >>> 0, true);
+  dv.setUint32(paddedLen - 4, Math.floor((len * 8) / 4294967296), true);
+
+  let a0 = 0x67452301, b0 = 0xefcdab89, c0 = 0x98badcfe, d0 = 0x10325476;
+  const rotl = (n, c) => (n << c) | (n >>> (32 - c));
+
+  for (let chunk = 0; chunk < paddedLen; chunk += 64) {
+    const M = new Int32Array(16);
+    for (let i = 0; i < 16; i++) M[i] = dv.getInt32(chunk + i * 4, true);
+    let A = a0, B = b0, C = c0, D = d0;
+    for (let i = 0; i < 64; i++) {
+      let F, g;
+      if (i < 16) { F = (B & C) | (~B & D); g = i; }
+      else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) % 16; }
+      else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) % 16; }
+      else { F = C ^ (B | ~D); g = (7 * i) % 16; }
+      F = (F + A + K[i] + M[g]) | 0;
+      A = D; D = C; C = B;
+      B = (B + rotl(F, S[i])) | 0;
+    }
+    a0 = (a0 + A) | 0; b0 = (b0 + B) | 0; c0 = (c0 + C) | 0; d0 = (d0 + D) | 0;
+  }
+
+  const out = new DataView(new ArrayBuffer(16));
+  out.setUint32(0, a0 >>> 0, true);
+  out.setUint32(4, b0 >>> 0, true);
+  out.setUint32(8, c0 >>> 0, true);
+  out.setUint32(12, d0 >>> 0, true);
+  return [...new Uint8Array(out.buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}

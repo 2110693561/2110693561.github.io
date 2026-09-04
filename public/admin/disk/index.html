@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>网盘管理</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      /* ============================================================
+         网盘管理页：与 Decap 后台同一套主题（浅色 + 靛蓝 / 夜间）
+         独立 HTML 无构建，不受 Decap 配置缓存影响
+         ============================================================ */
+      :root {
+        --bg: #f5f6fa;
+        --panel: #ffffff;
+        --border: #e5e8ef;
+        --text: #1a1f36;
+        --muted: #697089;
+        --accent: #1f2937;
+        --accent-hover: #0f172a;
+        --accent-soft: #eef0f4;
+        --danger: #dc2626;
+        --ok: #16a34a;
+        --radius: 12px;
+        --radius-sm: 8px;
+        --shadow-sm: 0 1px 2px rgba(23, 26, 46, 0.05);
+        --shadow-md: 0 8px 24px rgba(23, 26, 46, 0.09);
+      }
+      html[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #0e1117;
+        --panel: #161b24;
+        --border: #262d3d;
+        --text: #e6ebf4;
+        --muted: #8b96a8;
+        --accent: #3a4356;
+        --accent-hover: #46516a;
+        --accent-soft: #232b3a;
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+        --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 24px 20px 60px;
+      }
+
+      /* ---------- 顶栏 ---------- */
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      .topbar h1 {
+        font-size: 20px;
+        margin: 0 auto 0 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .topbar h1 a {
+        color: inherit;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--muted);
+      }
+      .topbar h1 a:hover {
+        color: var(--text);
+      }
+      .icon-btn {
+        flex: none;
+        width: 34px;
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--panel);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 15px;
+      }
+      .icon-btn:hover {
+        background: var(--accent-soft);
+      }
+
+      /* ---------- 按钮 ---------- */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 14px;
+        font-size: 13.5px;
+        font-family: inherit;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--panel);
+        color: var(--text);
+        cursor: pointer;
+        text-decoration: none;
+        transition: background 0.14s ease, border-color 0.14s ease;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        background: var(--accent-soft);
+      }
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .btn.primary:hover {
+        background: var(--accent-hover);
+      }
+      .btn.small {
+        padding: 4px 10px;
+        font-size: 12.5px;
+      }
+      .btn:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .btn.baidu {
+        background: #06a7ff;
+        border-color: #06a7ff;
+        color: #fff;
+      }
+      .btn.baidu:hover {
+        background: #0095e6;
+      }
+
+      /* ---------- 卡片 / 表格 ---------- */
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-sm);
+        overflow: hidden;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+      }
+      th {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        background: var(--accent-soft);
+        white-space: nowrap;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .fname {
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 500;
+      }
+      .fsize {
+        color: var(--muted);
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      .badge {
+        display: inline-block;
+        padding: 2px 9px;
+        border-radius: 999px;
+        font-size: 11.5px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .badge.on {
+        background: rgba(22, 163, 74, 0.12);
+        color: var(--ok);
+      }
+      .badge.off {
+        background: var(--accent-soft);
+        color: var(--muted);
+      }
+      .row-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      td.ops {
+        text-align: right;
+      }
+
+      /* ---------- 状态条 / 提示 ---------- */
+      .statusbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 14px 0;
+        font-size: 13px;
+        color: var(--muted);
+        min-height: 20px;
+      }
+      .banner {
+        display: none;
+        padding: 10px 14px;
+        border-radius: var(--radius-sm);
+        background: rgba(220, 38, 38, 0.08);
+        border: 1px solid rgba(220, 38, 38, 0.25);
+        color: var(--danger);
+        font-size: 13px;
+        margin-bottom: 14px;
+        line-height: 1.6;
+      }
+      .hint {
+        font-size: 12.5px;
+        color: var(--muted);
+        line-height: 1.7;
+        margin: 14px 2px 0;
+      }
+      .hint code {
+        background: var(--accent-soft);
+        padding: 1px 6px;
+        border-radius: 5px;
+        font-size: 12px;
+      }
+
+      /* ---------- 进度条 ---------- */
+      .progress {
+        display: none;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        overflow: hidden;
+        margin: 14px 0 0;
+      }
+      .progress > i {
+        display: block;
+        height: 100%;
+        width: 0;
+        border-radius: 999px;
+        background: #06a7ff;
+        transition: width 0.15s ease;
+      }
+
+      /* ---------- 登录卡片 ---------- */
+      .login-card {
+        max-width: 380px;
+        margin: 12vh auto 0;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-md);
+        padding: 36px 32px;
+        text-align: center;
+      }
+      .login-card .logo {
+        font-size: 40px;
+        margin-bottom: 10px;
+      }
+      .login-card h2 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+      .login-card p {
+        margin: 0 0 22px;
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      @media (max-width: 640px) {
+        .fname {
+          max-width: 140px;
+        }
+        th:nth-child(2),
+        td:nth-child(2) {
+          display: none;
+        }
+        .row-actions .btn {
+          padding: 4px 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap" id="app">
+      <!-- 顶栏 -->
+      <div class="topbar">
+        <h1>☁️ 网盘管理 <a href="/admin/" target="_self">← 内容后台</a></h1>
+        <button class="btn" id="btn-refresh" type="button" hidden>↻ 刷新</button>
+        <button class="btn primary" id="btn-upload" type="button" hidden>⬆ 上传文件</button>
+        <input type="file" id="file-input" hidden />
+        <button class="icon-btn" id="theme-toggle" type="button" title="切换明暗主题">🌙</button>
+      </div>
+
+      <div class="banner" id="rotate-banner">
+        百度返回了新的 refresh_token（旧的可能已失效）。请在本地终端执行
+        <code>npx wrangler secret put BAIDU_REFRESH_TOKEN</code>
+        更新（新值在本地 .baidu-token.json 里），否则网盘接口稍后会失效。
+      </div>
+
+      <!-- 登录 -->
+      <div class="login-card" id="login-card">
+        <div class="logo">🔐</div>
+        <h2>网盘管理</h2>
+        <p>
+          浏览网盘 <b>/apps/mynote</b> 目录、创建分享、上传文件、复制文章嵌入代码。<br />
+          仅站点所有者账号可登录。
+        </p>
+        <button class="btn primary" id="btn-login" type="button">使用 GitHub 登录</button>
+      </div>
+
+      <!-- 列表 -->
+      <div id="main" hidden>
+        <div class="statusbar" id="statusbar">加载中…</div>
+        <div class="progress" id="progress"><i></i></div>
+        <div class="panel">
+          <table>
+            <thead>
+              <tr>
+                <th>文件名</th>
+                <th>大小</th>
+                <th>分享状态</th>
+                <th style="text-align: right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="tbody">
+              <tr>
+                <td colspan="4" style="color: var(--muted)">加载中…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="hint">
+          · 「创建分享」直接在网盘侧生效，可立即复制链接使用；前台 <a href="/disk/" target="_blank">/disk/</a> 总览页与文章卡片的链接来自清单
+          <code>netdisk.json</code>，需等下一次同步（本地 <code>npm run baidu:sync</code> 或 push 触发的 CI）回写。<br />
+          · 「复制嵌入」得到 <code>{{netdisk 文件名}}</code>，粘贴进任意文章/笔记正文，构建时自动渲染为下载卡片。<br />
+          · 上传单文件上限 64MB；更大的文件请用本地 <code>npm run baidu:sync</code>。
+        </p>
+      </div>
+    </div>
+
+    <script>
+      // ==================== 基础配置 ====================
+      var WORKER = "https://decap-oauth-worker.zhanglingbin.workers.dev"; // 与 admin/config.yml 的 base_url 一致
+      var TOKEN_KEY = "disk-admin-token"; // 与 Decap 的 netlify-cms-user 隔离
+
+      var $ = function (id) {
+        return document.getElementById(id);
+      };
+      var el = {
+        loginCard: $("login-card"),
+        main: $("main"),
+        statusbar: $("statusbar"),
+        tbody: $("tbody"),
+        btnLogin: $("btn-login"),
+        btnRefresh: $("btn-refresh"),
+        btnUpload: $("btn-upload"),
+        fileInput: $("file-input"),
+        progress: $("progress"),
+        progressBar: document.querySelector("#progress > i"),
+        rotateBanner: $("rotate-banner"),
+        themeToggle: $("theme-toggle"),
+      };
+
+      function getToken() {
+        try {
+          return sessionStorage.getItem(TOKEN_KEY) || "";
+        } catch (e) {
+          return "";
+        }
+      }
+      function saveToken(t) {
+        try {
+          sessionStorage.setItem(TOKEN_KEY, t);
+        } catch (e) {}
+      }
+      function clearToken() {
+        try {
+          sessionStorage.removeItem(TOKEN_KEY);
+        } catch (e) {}
+      }
+
+      // ==================== 明暗主题（与前台/后台共用 localStorage.theme） ====================
+      (function () {
+        var saved = null;
+        try {
+          saved = localStorage.getItem("theme");
+        } catch (e) {}
+        var theme = saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.dataset.theme = theme;
+        el.themeToggle.textContent = theme === "dark" ? "☀" : "🌙";
+        el.themeToggle.addEventListener("click", function () {
+          var next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+          document.documentElement.dataset.theme = next;
+          el.themeToggle.textContent = next === "dark" ? "☀" : "🌙";
+          try {
+            localStorage.setItem("theme", next);
+          } catch (e) {}
+        });
+      })();
+
+      // ==================== GitHub OAuth 弹窗（完全复用 Decap 握手） ====================
+      el.btnLogin.addEventListener("click", function () {
+        var win = window.open(WORKER + "/auth", "githubOAuth", "width=640,height=720");
+        if (!win) {
+          alert("浏览器拦截了弹出窗口，请允许本站弹出窗口后重试。");
+          return;
+        }
+        function handler(e) {
+          // 弹窗就绪信号：回发 authorizing:github，弹窗才会交付 token
+          if (e.data === "authorizing:github") {
+            win.postMessage("authorizing:github", "*");
+            return;
+          }
+          if (typeof e.data === "string" && e.data.indexOf("authorization:github:success:") === 0) {
+            window.removeEventListener("message", handler);
+            try {
+              var payload = JSON.parse(e.data.slice("authorization:github:success:".length));
+              saveToken(payload.token);
+              enterApp();
+            } catch (err) {
+              setStatus("登录解析失败：" + err.message, true);
+            }
+          }
+        }
+        window.addEventListener("message", handler);
+        // 用户关掉弹窗未完成登录时移除监听
+        var timer = setInterval(function () {
+          if (win.closed) {
+            clearInterval(timer);
+            window.removeEventListener("message", handler);
+          }
+        }, 500);
+      });
+
+      // ==================== API 调用 ====================
+      function setStatus(msg, isError) {
+        el.statusbar.textContent = msg || "";
+        el.statusbar.style.color = isError ? "var(--danger)" : "";
+      }
+
+      function api(path, opts) {
+        opts = opts || {};
+        opts.headers = Object.assign({ Authorization: "Bearer " + getToken() }, opts.headers || {});
+        return fetch(WORKER + path, opts).then(function (r) {
+          if (r.status === 401) {
+            clearToken();
+            showLogin("登录已过期，请重新登录。");
+            throw new Error("登录已过期");
+          }
+          if (r.headers.get("x-baidu-rotated")) el.rotateBanner.style.display = "block";
+          return r.json().then(function (j) {
+            if (!r.ok) throw new Error((j && j.error) || "HTTP " + r.status);
+            return j;
+          });
+        });
+      }
+
+      // ==================== 列表 ====================
+      var files = [];
+
+      function enterApp() {
+        el.loginCard.hidden = true;
+        el.main.hidden = false;
+        el.btnRefresh.hidden = false;
+        el.btnUpload.hidden = false;
+        refresh();
+      }
+
+      function showLogin(msg) {
+        el.main.hidden = true;
+        el.btnRefresh.hidden = true;
+        el.btnUpload.hidden = true;
+        el.loginCard.hidden = false;
+        el.rotateBanner.style.display = "none";
+        if (msg) setStatus(msg, true);
+      }
+
+      function refresh() {
+        setStatus("加载中…");
+        el.tbody.innerHTML = '<tr><td colspan="4" style="color: var(--muted)">加载中…</td></tr>';
+        api("/disk/list")
+          .then(function (j) {
+            files = j.files || [];
+            render();
+          })
+          .catch(function (e) {
+            if (String(e.message) === "登录已过期") return;
+            setStatus("加载失败：" + e.message, true);
+          });
+      }
+
+      function formatSize(s) {
+        if (!isFinite(s) || s <= 0) return "0 B";
+        if (s < 1024) return s + " B";
+        if (s < 1048576) return (s / 1024).toFixed(1) + " KB";
+        if (s < 1073741824) return (s / 1048576).toFixed(1) + " MB";
+        return (s / 1073741824).toFixed(2) + " GB";
+      }
+
+      function render() {
+        var shared = files.filter(function (f) {
+          return f.link;
+        }).length;
+        setStatus("共 " + files.length + " 个文件 · 已分享 " + shared + " 个" + (shared < files.length ? "（灰徽为待分享）" : ""));
+        if (!files.length) {
+          el.tbody.innerHTML = '<tr><td colspan="4" style="color: var(--muted)">网盘目录为空</td></tr>';
+          return;
+        }
+        el.tbody.innerHTML = "";
+        files.forEach(function (f) {
+          var tr = document.createElement("tr");
+
+          var tdName = document.createElement("td");
+          tdName.className = "fname";
+          tdName.title = f.basename;
+          tdName.textContent = f.basename;
+
+          var tdSize = document.createElement("td");
+          tdSize.className = "fsize";
+          tdSize.textContent = formatSize(f.size);
+
+          var tdSt = document.createElement("td");
+          var badge = document.createElement("span");
+          badge.className = "badge " + (f.link ? "on" : "off");
+          badge.textContent = f.link ? "已分享" : "待分享";
+          tdSt.appendChild(badge);
+
+          var tdOps = document.createElement("td");
+          tdOps.className = "ops";
+          var ops = document.createElement("div");
+          ops.className = "row-actions";
+
+          if (f.link) {
+            ops.appendChild(makeBtn("查看", function () {
+              window.open(f.link, "_blank", "noopener");
+            }));
+            ops.appendChild(makeBtn("复制链接", function () {
+              copyText(f.link, this);
+            }));
+            if (f.code) {
+              ops.appendChild(makeBtn("复制提取码", function () {
+                copyText(f.code, this);
+              }));
+            }
+          } else {
+            var shareBtn = makeBtn("🔗 创建分享", function () {
+              createShare(f, shareBtn);
+            });
+            ops.appendChild(shareBtn);
+          }
+          ops.appendChild(makeBtn("复制嵌入", function () {
+            copyText("{{netdisk " + f.basename + "}}", this);
+          }));
+
+          tdOps.appendChild(ops);
+          tr.appendChild(tdName);
+          tr.appendChild(tdSize);
+          tr.appendChild(tdSt);
+          tr.appendChild(tdOps);
+          el.tbody.appendChild(tr);
+        });
+      }
+
+      function makeBtn(text, onClick) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn small";
+        b.textContent = text;
+        b.addEventListener("click", function () {
+          onClick.call(b);
+        });
+        return b;
+      }
+
+      function createShare(f, btn) {
+        var old = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "创建中…";
+        api("/disk/share", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fsId: f.fsId }),
+        })
+          .then(function (j) {
+            f.link = j.link;
+            f.code = j.code;
+            render();
+            setStatus("分享已创建：" + j.link + "（提取码 " + j.code + "）");
+          })
+          .catch(function (e) {
+            btn.disabled = false;
+            btn.textContent = old;
+            if (String(e.message) === "登录已过期") return;
+            setStatus("创建分享失败：" + e.message, true);
+          });
+      }
+
+      // ==================== 上传（XMLHttpRequest 带进度） ====================
+      el.btnUpload.addEventListener("click", function () {
+        el.fileInput.value = "";
+        el.fileInput.click();
+      });
+      el.fileInput.addEventListener("change", function () {
+        var file = el.fileInput.files && el.fileInput.files[0];
+        if (file) uploadFile(file);
+      });
+
+      function uploadFile(file) {
+        var pct = 0;
+        el.progress.style.display = "block";
+        setProgress(0);
+        setStatus("上传中：" + file.name + "（" + formatSize(file.size) + "）");
+
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", WORKER + "/disk/upload");
+        xhr.setRequestHeader("Authorization", "Bearer " + getToken());
+        xhr.upload.onprogress = function (e) {
+          if (e.lengthComputable) setProgress(e.loaded / e.total);
+        };
+        xhr.onload = function () {
+          var j = null;
+          try {
+            j = JSON.parse(xhr.responseText);
+          } catch (e) {}
+          if (xhr.status === 401) {
+            el.progress.style.display = "none";
+            clearToken();
+            showLogin("登录已过期，请重新登录。");
+            return;
+          }
+          if (xhr.status >= 200 && xhr.status < 300 && j && j.ok) {
+            setProgress(1);
+            el.rotateBanner.style.display = j.rotated ? "block" : el.rotateBanner.style.display;
+            setStatus(
+              "上传完成：" + j.path + (j.rapid ? "（秒传命中，网盘已存在同内容文件）" : "") +
+                "。前台清单需等下一次同步回写。"
+            );
+            setTimeout(function () {
+              el.progress.style.display = "none";
+            }, 600);
+            refresh();
+          } else {
+            el.progress.style.display = "none";
+            setStatus("上传失败：" + ((j && j.error) || "HTTP " + xhr.status), true);
+          }
+        };
+        xhr.onerror = function () {
+          el.progress.style.display = "none";
+          setStatus("上传失败：网络错误", true);
+        };
+        var fd = new FormData();
+        fd.append("file", file);
+        xhr.send(fd);
+      }
+      function setProgress(p) {
+        el.progressBar.style.width = Math.round(p * 100) + "%";
+      }
+
+      // ==================== 复制（clipboard API + execCommand 降级） ====================
+      function copyText(text, btn) {
+        var done = function () {
+          if (!btn) return;
+          var old = btn.textContent;
+          btn.textContent = "✓ 已复制";
+          setTimeout(function () {
+            btn.textContent = old;
+          }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, function () {
+            fallbackCopy(text);
+            done();
+          });
+        } else {
+          fallbackCopy(text);
+          done();
+        }
+      }
+      function fallbackCopy(text) {
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand("copy");
+        } catch (e) {}
+        document.body.removeChild(ta);
+      }
+
+      // ==================== 启动 ====================
+      el.btnRefresh.addEventListener("click", refresh);
+      if (getToken()) {
+        enterApp();
+      }
+    </script>
+  </body>
+</html>

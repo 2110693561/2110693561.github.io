@@ -56,7 +56,16 @@ const files = defineCollection({
     // 旧版单文件（保留兼容）
     attachment: z.string().optional(),
     // 多文件：每个条目可挂多个附件
-    attachments: z.array(z.object({ file: z.string() })).default([]),
+    // baidu：百度网盘分享链接（备用下载源）；code：分享提取码
+    attachments: z
+      .array(
+        z.object({
+          file: z.string(),
+          baidu: z.string().optional(),
+          code: z.string().optional(),
+        })
+      )
+      .default([]),
     // 隐藏：不在资料页显示
     hidden: z.boolean().default(false),
   }),

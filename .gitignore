@@ -7,3 +7,5 @@ build.err.log
 .env
 .env.*
 !.env.example
+.baidu-token.json
+.baidu-web-cookies.json

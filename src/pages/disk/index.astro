@@ -1,0 +1,187 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import netdisk from "../../data/netdisk.json";
+
+type NetEntry = {
+  basename: string;
+  size: number;
+  fsId: number;
+  md5?: string;
+  link: string | null;
+  code: string | null;
+  source?: string;
+  updatedAt?: string;
+};
+const entries = (netdisk.files as NetEntry[]) ?? [];
+
+const extOf = (n: string) => (n.split(".").pop() || "").toLowerCase();
+const IMG = ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico"];
+const DOC = ["pdf", "md", "markdown", "txt", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "epub"];
+const ARC = ["zip", "rar", "7z", "tar", "gz", "bz2", "xz"];
+const CATEGORY: Array<{ name: string; icon: string; test: (e: string) => boolean }> = [
+  { name: "图片", icon: "🖼️", test: (e) => IMG.includes(e) },
+  { name: "文档", icon: "📄", test: (e) => DOC.includes(e) },
+  { name: "压缩包", icon: "🗜️", test: (e) => ARC.includes(e) },
+  { name: "其他", icon: "📦", test: () => true },
+];
+const formatSize = (s: number) =>
+  s < 1024 ? `${s} B` : s < 1048576 ? `${(s / 1024).toFixed(1)} KB` : `${(s / 1048576).toFixed(1)} MB`;
+
+const shared = entries.filter((f) => f.link).length;
+const groups = CATEGORY.map((c) => ({
+  ...c,
+  list: entries.filter((f) => c.test(extOf(f.basename))),
+})).filter((g) => g.list.length > 0);
+---
+
+<BaseLayout title="网盘资源" description="百度网盘资源总览：全部附件的备用下载链接与提取码。">
+  <div class="page-head">
+    <div>
+      <h1>网盘资源</h1>
+      <p>
+        共 {entries.length} 个文件 · 已分享 {shared} 个
+        {shared < entries.length && <span class="disk-pending-hint">（{entries.length - shared} 个待分享，稍后自动补齐）</span>}
+      </p>
+    </div>
+  </div>
+
+  {
+    entries.length === 0 && (
+      <p class="search-hint">
+        网盘里还没有文件。在 CMS 后台上传资料附件后，同步脚本会把它们自动传到网盘并出现在这里。
+      </p>
+    )
+  }
+
+  <div class="disk-list">
+    {
+      groups.map((g) => (
+        <section class="disk-group">
+          <h2>
+            {g.icon} {g.name} <span class="disk-count">{g.list.length}</span>
+          </h2>
+          <div class="card disk-card">
+            {g.list.map((f) => (
+              <div class="file-item">
+                <div class="file-row">
+                  <span class="file-badge">{(extOf(f.basename) || "file").toUpperCase()}</span>
+                  <span class="file-name" title={f.basename}>
+                    {f.basename}
+                    <span class="disk-size">{formatSize(f.size)}</span>
+                  </span>
+                  <div class="file-actions">
+                    {f.link ? (
+                      <a class="btn baidu-btn" href={f.link} target="_blank" rel="noopener">
+                        ☁️ 百度网盘
+                      </a>
+                    ) : (
+                      <span class="btn disk-pending" title="分享链接尚未创建，同步脚本会在后续运行中自动补齐">待分享</span>
+                    )}
+                    {f.link && f.code && (
+                      <button class="btn code-btn" type="button" data-code={f.code} title="点击复制提取码">
+                        提取码 {f.code}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))
+    }
+  </div>
+
+  <script>
+    // 提取码一键复制（与资料页同款降级逻辑）
+    document.querySelectorAll<HTMLButtonElement>(".code-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const code = btn.dataset.code!;
+        const done = () => {
+          const old = btn.textContent;
+          btn.textContent = "✓ 已复制";
+          setTimeout(() => (btn.textContent = old), 1500);
+        };
+        try {
+          await navigator.clipboard.writeText(code);
+          done();
+        } catch {
+          const ta = document.createElement("textarea");
+          ta.value = code;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            document.execCommand("copy");
+            done();
+          } catch {
+            btn.textContent = `提取码：${code}`;
+          }
+          document.body.removeChild(ta);
+        }
+      });
+    });
+  </script>
+</BaseLayout>
+
+<style>
+  .disk-pending-hint {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .disk-list {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .disk-group h2 {
+    margin: 0 0 10px;
+    font-size: 16px;
+  }
+  .disk-count {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 400;
+    margin-left: 4px;
+  }
+  .disk-card {
+    padding: 6px 18px;
+  }
+  .disk-card .file-item:first-child {
+    border-top: none;
+    margin-top: 0;
+  }
+  .disk-size {
+    margin-left: 8px;
+    color: var(--muted);
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+  .disk-pending {
+    color: var(--muted);
+    border-style: dotted;
+    cursor: default;
+    font-size: 13px;
+  }
+  .disk-pending:hover {
+    transform: none;
+    border-color: var(--border);
+    color: var(--muted);
+  }
+  /* 行内元素复用 global.css 的 .file-item/.file-row/.file-badge/.file-name/.file-actions
+     （资料页全局块定义），这里只补网盘页专属细节 */
+  @media (max-width: 640px) {
+    .disk-card .file-row {
+      flex-wrap: wrap;
+    }
+    .file-name {
+      white-space: normal;
+      word-break: break-all;
+    }
+    .disk-size {
+      display: inline-block;
+      margin: 4px 0 0;
+    }
+  }
+</style>

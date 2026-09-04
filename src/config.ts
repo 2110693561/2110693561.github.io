@@ -35,6 +35,7 @@ export const NAV = [
   { text: "文章", url: "/posts/" },
   { text: "随手记", url: "/notes/" },
   { text: "资料", url: "/files/" },
+  { text: "网盘", url: "/disk/" },
   { text: "项目", url: "/projects/" },
   { text: "搜索", url: "/search/" },
   { text: "关于", url: "/about/" },

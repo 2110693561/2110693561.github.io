@@ -24,11 +24,16 @@ const kindOf = (u: string) => {
   return "file";
 };
 // 每条资料的文件列表：兼容旧版单文件 attachment + 新版多文件 attachments
-const fileList = (f: (typeof files)[number]) => {
-  const list: string[] = [];
-  if (f.data.attachment) list.push(urlOf(f.data.attachment));
+// 每个文件带可选的百度网盘备用链接 baidu 与提取码 code
+type FileEntry = { url: string; baidu?: string; code?: string };
+const fileEntries = (f: (typeof files)[number]): FileEntry[] => {
+  const list: FileEntry[] = [];
+  if (f.data.attachment) list.push({ url: urlOf(f.data.attachment) });
   for (const a of f.data.attachments ?? []) {
-    if (a.file && !list.includes(urlOf(a.file))) list.push(urlOf(a.file));
+    if (!a.file) continue;
+    const url = urlOf(a.file);
+    if (list.some((e) => e.url === url)) continue;
+    list.push({ url, baidu: a.baidu || undefined, code: a.code || undefined });
   }
   return list;
 };
@@ -55,7 +60,7 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
   <div class="file-list">
     {
       files.map((f) => {
-        const urls = fileList(f);
+        const entries = fileEntries(f);
         return (
           <div class="card file-card">
             <div class="file-head">
@@ -66,29 +71,44 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
                   {f.data.description ? " · " + f.data.description : ""}
                 </p>
               </div>
-              {urls.length > 0 && (
+              {entries.length > 0 && (
                 <button class="file-fold-btn" type="button">
-                  展开预览 ({urls.length})
+                  展开预览 ({entries.length})
                 </button>
               )}
             </div>
             <div class="file-fold" data-collapsed>
-              {urls.map((u) => {
-                const kind = kindOf(u);
+              {entries.map((e) => {
+                const kind = kindOf(e.url);
                 return (
                   <div class="file-item">
                     <div class="file-row">
-                      <span class="file-badge">{(extOf(u) || "file").toUpperCase()}</span>
-                      <span class="file-name" title={nameOf(u)}>
-                        {nameOf(u)}
+                      <span class="file-badge">{(extOf(e.url) || "file").toUpperCase()}</span>
+                      <span class="file-name" title={nameOf(e.url)}>
+                        {nameOf(e.url)}
                       </span>
                       <div class="file-actions">
-                        <a class="btn" href={u} target="_blank" rel="noopener" download>
+                        <a class="btn" href={e.url} target="_blank" rel="noopener" download>
                           下载
                         </a>
+                        {e.baidu && (
+                          <a class="btn baidu-btn" href={e.baidu} target="_blank" rel="noopener">
+                            ☁️ 百度网盘
+                          </a>
+                        )}
+                        {e.baidu && e.code && (
+                          <button
+                            class="btn code-btn"
+                            type="button"
+                            data-code={e.code}
+                            title="点击复制提取码"
+                          >
+                            提取码 {e.code}
+                          </button>
+                        )}
                       </div>
                     </div>
-                    {kind !== "file" && <div class="file-inline" data-url={u} data-kind={kind} />}
+                    {kind !== "file" && <div class="file-inline" data-url={e.url} data-kind={kind} />}
                   </div>
                 );
               })}
@@ -232,6 +252,36 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
       });
     });
 
+    // 提取码一键复制：复制成功按钮短暂变为「✓ 已复制」；剪贴板 API 失败时退回 execCommand
+    document.querySelectorAll<HTMLButtonElement>(".code-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const code = btn.dataset.code!;
+        const done = () => {
+          const old = btn.textContent;
+          btn.textContent = "✓ 已复制";
+          setTimeout(() => (btn.textContent = old), 1500);
+        };
+        try {
+          await navigator.clipboard.writeText(code);
+          done();
+        } catch {
+          const ta = document.createElement("textarea");
+          ta.value = code;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            document.execCommand("copy");
+            done();
+          } catch {
+            btn.textContent = `提取码：${code}`;
+          }
+          document.body.removeChild(ta);
+        }
+      });
+    });
+
     document.getElementById("file-modal-close")!.addEventListener("click", closeModal);
     document.querySelector(".file-modal-mask")!.addEventListener("click", closeModal);
     document.addEventListener("keydown", (e) => {
@@ -356,6 +406,23 @@ const nameOf = (u: string) => decodeURIComponent(u.split("/").pop() || u);
     padding: 5px 14px;
     font-size: 13px;
     cursor: pointer;
+  }
+  /* 百度网盘备用按钮：百度品牌蓝 */
+  .file-actions .baidu-btn {
+    color: #fff;
+    background: #06a7ff;
+    border-color: #06a7ff;
+    text-decoration: none;
+  }
+  .file-actions .baidu-btn:hover {
+    background: #0095e6;
+    border-color: #0095e6;
+  }
+  /* 提取码按钮：等宽字体，点按复制 */
+  .file-actions .code-btn {
+    font-family: ui-monospace, Consolas, "Courier New", monospace;
+    letter-spacing: 0.06em;
+    border-style: dashed;
   }
 
   /* 预览弹窗 */
