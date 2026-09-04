@@ -43,6 +43,9 @@ const groups = CATEGORY.map((c) => ({
         {shared < entries.length && <span class="disk-pending-hint">（{entries.length - shared} 个待分享，稍后自动补齐）</span>}
       </p>
     </div>
+    <a class="disk-admin-btn" href="/admin/disk/" title="站点所有者的网盘管理入口（登录后可上传 / 分享 / 扫码更新登录凭证）">
+      🔐 网盘管理
+    </a>
   </div>
 
   {
@@ -126,6 +129,32 @@ const groups = CATEGORY.map((c) => ({
 </BaseLayout>
 
 <style>
+  /* 本页 page-head 升级为左右布局：标题居左，管理入口居右 */
+  .page-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .disk-admin-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13.5px;
+    background: var(--card);
+    transition: border-color 0.15s, transform 0.15s;
+  }
+  .disk-admin-btn:hover {
+    border-color: var(--accent);
+    transform: translateY(-1px);
+  }
   .disk-pending-hint {
     color: var(--muted);
     font-size: 13px;
