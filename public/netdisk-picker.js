@@ -132,6 +132,8 @@
       ".ndp-row:hover{background:#eef0f4}",
       ".ndp-row.loading{opacity:.5;cursor:wait}",
       ".ndp-fname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;color:#1a1f36}",
+      ".ndp-fdir{color:#697089;font-size:11.5px;margin-right:4px}",
+      "html[data-theme='dark'] .ndp-fdir{color:#8b96a8}",
       ".ndp-fsize{flex:none;color:#697089;font-size:12px;white-space:nowrap}",
       ".ndp-badge{flex:none;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}",
       ".ndp-badge.on{background:rgba(22,163,74,.12);color:#16a34a}",
@@ -258,7 +260,7 @@
       row.className = "ndp-row";
       row.innerHTML =
         '<span class="ndp-folder-ico">📄</span>' +
-        '<span class="ndp-fname" title="' + esc(f.basename) + '">' + esc(f.basename) + "</span>" +
+        '<span class="ndp-fname" title="' + esc(f.basename) + '">' + (f.dir ? '<span class="ndp-fdir">📁' + esc(f.dir) + '</span>' : "") + esc(f.basename) + "</span>" +
         '<span class="ndp-fsize">' + formatSize(f.size) + "</span>" +
         '<span class="ndp-badge ' + (f.link ? "on" : "off") + '">' + (f.link ? "已分享" : "待分享") + "</span>";
       row.addEventListener("click", function () {

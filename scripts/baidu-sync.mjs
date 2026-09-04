@@ -232,6 +232,29 @@ async function listDir(token, dir) {
   return j.list || [];
 }
 
+/** 计算文件相对应用根目录的文件夹（"" = 根目录） */
+function relativeDir(rootDir, filePath) {
+  const rel = filePath.startsWith(rootDir) ? filePath.slice(rootDir.length) : filePath;
+  const parts = rel.split("/").filter(Boolean);
+  parts.pop(); // 去掉文件名本身
+  return parts.length ? "/" + parts.join("/") : "";
+}
+
+/** 递归列出目录树（含子目录，深度≤3）；条目 isdir 置 0 并带 dir 字段（相对应用根目录） */
+async function listDirAll(token, dir, rootDir = dir, depth = 0) {
+  const entries = await listDir(token, dir);
+  if (!entries) return [];
+  const files = [];
+  for (const f of entries) {
+    if (f.isdir === 1) {
+      if (depth < 3) files.push(...(await listDirAll(token, f.path, rootDir, depth + 1)));
+      continue;
+    }
+    files.push({ ...f, isdir: 0, dir: relativeDir(rootDir, f.path) });
+  }
+  return files;
+}
+
 async function uploadFile(token, remotePath, localPath) {
   const buf = await fs.promises.readFile(localPath);
   const slices = [];
@@ -773,6 +796,7 @@ function buildManifest(remoteList, mdLinks, syncLinks, prev, remoteDir) {
       }
       return {
         basename: b,
+        dir: f.dir || "",
         size: f.size,
         fsId: f.fs_id,
         md5: f.md5 || "",
@@ -842,7 +866,7 @@ async function main() {
     for (const t of tasks) log(`  · [${t.mdName}] ${t.basename}`);
   }
   if (dryRun) {
-    const remoteList = (await listDir(token, remoteDir)) || [];
+    const remoteList = (await listDirAll(token, remoteDir)) || [];
     const prev = loadManifest();
     log(`\n--dry-run 模式：不实际上传、不分享、不回写、不写清单。`);
     log(`网盘 ${remoteDir} 现有文件 ${remoteList.filter((f) => f.isdir === 0).length} 个；现有清单 ${prev.files.length} 条（${prev.files.filter((f) => !f.link).length} 个待分享）。`);
@@ -854,7 +878,7 @@ async function main() {
   // name -> { size, fsId }：size 用于跳过重复上传，fsId 用于网页端自动分享
   const buildMeta = (list) =>
     new Map(list.filter((f) => f.isdir === 0).map((f) => [f.server_filename, { size: f.size, fsId: f.fs_id }]));
-  let remoteMeta = buildMeta((await listDir(token, remoteDir)) || []);
+  let remoteMeta = buildMeta((await listDirAll(token, remoteDir)) || []);
 
   const uploaded = [];
   let newUploads = 0;
@@ -877,7 +901,7 @@ async function main() {
       fail++;
     }
   }
-  if (newUploads > 0) remoteMeta = buildMeta((await listDir(token, remoteDir)) || []);
+  if (newUploads > 0) remoteMeta = buildMeta((await listDirAll(token, remoteDir)) || []);
 
   // 分享：有 BAIDU_BDUSS 走网页端接口全自动；没有时（交互终端）可现场扫码授权一次
   let bduss = process.env.BAIDU_BDUSS?.trim();
@@ -975,7 +999,7 @@ async function main() {
   }
 
   // ---- 生成网盘清单（前台 /disk/ 总览页与文章下载卡片的数据源）----
-  const finalList = await listDir(token, remoteDir);
+  const finalList = await listDirAll(token, remoteDir);
   if (finalList) {
     const mdLinks = collectMdLinks(); // 回写完成后再扫，能拿到本次刚写入的链接
     const prevManifest = loadManifest();

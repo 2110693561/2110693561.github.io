@@ -244,35 +244,54 @@ async function getBaiduToken(env, { forceRefresh = false } = {}) {
   return { token: j.access_token, rotated, source: "refresh", newAccessToken: j.access_token };
 }
 
-/** GET /disk/list：网盘目录 + 公开清单合并（显示分享状态） */
+/** GET /disk/list：网盘目录（递归子目录）+ 公开清单合并（显示分享状态） */
 async function diskList(env) {
   let tr = await getBaiduToken(env);
   let { token, rotated, source } = tr;
   const dir = env.BAIDU_DIR || "/apps/mynote";
-  let res = await fetch(
-    `${BAIDU_XPAN}/file?method=list&access_token=${encodeURIComponent(token)}&dir=${encodeURIComponent(dir)}&order=name&web=1`
-  );
-  let j = await res.json().catch(() => null);
+  const listOnce = async (d) => {
+    const r = await fetch(
+      `${BAIDU_XPAN}/file?method=list&access_token=${encodeURIComponent(token)}&dir=${encodeURIComponent(d)}&order=name&web=1`
+    );
+    return r.json().catch(() => null);
+  };
+  let j = await listOnce(dir);
   // access_token 过期时 xpan 报 errno=-6：降级到 refresh_token 刷新后重试一次
   if (source === "direct" && j && j.errno === -6 && env.BAIDU_REFRESH_TOKEN) {
     tr = await getBaiduToken(env, { forceRefresh: true });
     token = tr.token; rotated = tr.rotated; source = tr.source;
-    res = await fetch(
-      `${BAIDU_XPAN}/file?method=list&access_token=${encodeURIComponent(token)}&dir=${encodeURIComponent(dir)}&order=name&web=1`
-    );
-    j = await res.json().catch(() => null);
+    j = await listOnce(dir);
   }
   if (!j || j.errno !== 0) {
     throw httpError(502, `网盘目录读取失败 errno=${j ? j.errno : "非 JSON 响应"}${j && j.errno === -9 ? "（目录不存在，先在网盘建好应用目录）" : ""}`);
   }
-  const files = (j.list || [])
-    .filter((f) => !f.isdir)
-    .map((f) => ({
-      fsId: f.fs_id,
-      basename: f.server_filename || String(f.path || "").split("/").pop(),
-      size: f.size,
-      md5: f.md5 || "",
-    }));
+  // 递归展开子目录（深度≤3）；单层失败跳过不影响整体
+  const relativeDir = (root, p) => {
+    const rel = p.startsWith(root) ? p.slice(root.length) : p;
+    const parts = rel.split("/").filter(Boolean);
+    parts.pop();
+    return parts.length ? "/" + parts.join("/") : "";
+  };
+  const walk = async (d, root, depth) => {
+    const out = [];
+    let r = depth === 0 ? j : await listOnce(d);
+    if (!r || r.errno !== 0) return out;
+    for (const f of r.list || []) {
+      if (f.isdir) {
+        if (depth < 3) out.push(...(await walk(f.path, root, depth + 1)));
+        continue;
+      }
+      out.push({
+        fsId: f.fs_id,
+        basename: f.server_filename || String(f.path || "").split("/").pop(),
+        size: f.size,
+        md5: f.md5 || "",
+        dir: relativeDir(root, f.path),
+      });
+    }
+    return out;
+  };
+  const files = await walk(dir, dir, 0);
 
   // 合并公开清单（raw.githubusercontent.com），补分享链接状态；失败不致命
   let links = {};

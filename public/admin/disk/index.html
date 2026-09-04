@@ -802,8 +802,15 @@
 
           var tdName = document.createElement("td");
           tdName.className = "fname";
+          if (f.dir) {
+            var dirTag = document.createElement("span");
+            dirTag.className = "dir-tag";
+            dirTag.textContent = "📁" + f.dir;
+            dirTag.style.cssText = "color:var(--muted);font-size:11.5px;margin-right:6px";
+            tdName.appendChild(dirTag);
+          }
           tdName.title = f.basename;
-          tdName.textContent = f.basename;
+          tdName.appendChild(document.createTextNode(f.basename));
 
           var tdSize = document.createElement("td");
           tdSize.className = "fsize";
