@@ -2057,16 +2057,24 @@
       // 递归遍历容器，处理所有纯文本节点（跳过 code/pre/script/style）
       function processContainer(container) {
         if (!container) return;
-        // 检查有没有未处理的 token（快速路径：没有 {{ 就跳过）
+        // 快速路径：textContent 里没有 {{ 就跳过整个子树
+        if (container.nodeType === 1) {
+          var tag = container.tagName;
+          if (!tag) return;
+          // 跳过这些元素：里面的 {{ 应该原样保留
+          if (/^(CODE|PRE|SCRIPT|STYLE|TEXTAREA|NOSCRIPT)$/.test(tag)) return;
+          // 跳过已经处理过的 nd-card
+          if (container.classList && container.classList.contains("nd-card")) return;
+          // 快速检查：整个元素的文本里有没有 {{
+          var tc = container.textContent;
+          if (!tc || tc.indexOf("{{") < 0) return;
+        }
+        // 检查纯文本节点
         if (container.nodeType === 3 && container.nodeValue && container.nodeValue.indexOf("{{") >= 0) {
           processTextNode(container);
           return;
         }
-        if (container.nodeType !== 1) return; // 只处理元素节点
-        var tag = container.tagName;
-        if (!tag) return;
-        // 跳过这些元素：里面的 {{ 应该原样保留
-        if (/^(CODE|PRE|SCRIPT|STYLE|TEXTAREA|NOSCRIPT)$/.test(tag)) return;
+        if (container.nodeType !== 1) return;
         // 递归子节点（快照，避免修改时遍历器混乱）
         var children = [];
         for (var i = 0; i < container.childNodes.length; i++) {
@@ -2118,38 +2126,30 @@
         });
       }
 
-      // 监听预览 iframe 加载 + 内容变化
+      // 监听预览 iframe：setInterval 轮询（比 MutationObserver 更可靠，
+      // 因为 Decap 每次输入会重建 iframe 内 DOM，observer 监听的旧容器会失效）
+      var processedAttr2 = "data-nd-done";
+
+      function processIframe(iframe) {
+        try {
+          var doc = iframe.contentDocument || iframe.contentWindow.document;
+          if (!doc || !doc.body) return;
+          bindCopyHandler(doc);
+          // 确保 manifest 已加载（标准 token 需要查清单）
+          loadManifest().then(function () {
+            processContainer(doc.body);
+          });
+          // 扩展 token 不需要 manifest，先跑一次
+          processContainer(doc.body);
+        } catch (e) {
+          // 跨域 iframe，跳过
+        }
+      }
+
       function attachPreviewObserver() {
-        // Decap 的预览在 iframe 里，等 iframe 加载完再操作
         var iframes = document.querySelectorAll("iframe");
         for (var i = 0; i < iframes.length; i++) {
-          (function (iframe) {
-            if (iframe[processedAttr]) return;
-            iframe[processedAttr] = "1";
-            function onLoad() {
-              try {
-                var doc = iframe.contentDocument || iframe.contentWindow.document;
-                var container = doc.querySelector(".prose") || doc.querySelector("article");
-                if (!container) return;
-                bindCopyHandler(doc);
-                loadManifest().then(function () {
-                  processContainer(container);
-                  // 持续监听（Decap 每次输入可能重建 DOM）
-                  var mo = new MutationObserver(function () {
-                    processContainer(container);
-                  });
-                  mo.observe(container, { childList: true, characterData: true, subtree: true });
-                });
-              } catch (e) {
-                // 跨域 iframe，跳过
-              }
-            }
-            if (iframe.contentDocument && iframe.contentDocument.readyState !== "loading") {
-              onLoad();
-            } else {
-              iframe.addEventListener("load", onLoad);
-            }
-          })(iframes[i]);
+          processIframe(iframes[i]);
         }
       }
 
@@ -2157,29 +2157,22 @@
       function attachTopObserver() {
         var containers = document.querySelectorAll(".prose");
         for (var i = 0; i < containers.length; i++) {
-          (function (container) {
-            if (container[processedAttr]) return;
-            container[processedAttr] = "1";
-            loadManifest().then(function () {
-              processContainer(container);
-            });
-          })(containers[i]);
+          processContainer(containers[i]);
         }
       }
 
-      // 等待 Decap 就绪（不断有 iframe 被创建）
+      // 等待 Decap 就绪
       function start() {
         bindCopyHandler(document);
-        // 周期性检查新 iframe（Decap 切换集合/条目时会销毁旧 iframe、创建新的）
-        attachPreviewObserver();
-        attachTopObserver();
-
-        // 持续监听页面变化（新 iframe 出现 → 新 preview 容器出现）
-        var bodyObserver = new MutationObserver(function () {
+        // setInterval 轮询（800ms）——Decap 每次输入都重建 iframe 内 DOM，
+        // MutationObserver 监听旧容器会失效，轮询最可靠
+        setInterval(function () {
           attachPreviewObserver();
           attachTopObserver();
-        });
-        bodyObserver.observe(document.body, { childList: true, subtree: true });
+        }, 800);
+        // 立即跑一次
+        attachPreviewObserver();
+        attachTopObserver();
       }
 
       if (document.readyState === "loading") {
