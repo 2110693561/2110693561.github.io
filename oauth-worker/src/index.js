@@ -93,6 +93,7 @@ export default {
 const BAIDU_XPAN = "https://pan.baidu.com/rest/2.0/xpan";
 const BAIDU_PCS = "https://d.pcs.baidu.com/rest/2.0/pcs/superfile2";
 const WEB_SHARE = "https://pan.baidu.com/share/set";
+const BAIDU_PASSPORT = "https://passport.baidu.com";
 const WEB_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const SLICE_SIZE = 8 * 1024 * 1024; // xpan 分片要求 4MB 的整数倍
 const MAX_UPLOAD = 64 * 1024 * 1024; // Workers 免费档单请求 128MB 内存，64MB 留足余量
@@ -126,7 +127,7 @@ function allowOrigin(request, env) {
 async function handleDisk(request, env, url) {
   const origin = allowOrigin(request, env);
   const cors = origin
-    ? { "Access-Control-Allow-Origin": origin, "Access-Control-Expose-Headers": "x-baidu-rotated, x-baidu-access-token", Vary: "Origin" }
+    ? { "Access-Control-Allow-Origin": origin, "Access-Control-Expose-Headers": "x-baidu-rotated, x-baidu-access-token, x-qr-cookie", Vary: "Origin" }
     : {};
 
   if (request.method === "OPTIONS") {
@@ -135,7 +136,7 @@ async function handleDisk(request, env, url) {
       headers: {
         ...cors,
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type, X-QR-Cookie",
         "Access-Control-Max-Age": "86400",
       },
     });
@@ -163,6 +164,12 @@ async function handleDisk(request, env, url) {
       result = await diskUpload(env, request);
     } else if (url.pathname === "/disk/mkdir" && request.method === "POST") {
       result = await diskMkdir(env, url);
+    } else if (url.pathname === "/disk/auth/status" && request.method === "GET") {
+      result = await diskAuthStatus(env);
+    } else if (url.pathname === "/disk/auth/qrlogin" && request.method === "GET") {
+      result = await diskQrInit();
+    } else if (url.pathname === "/disk/auth/qrpoll" && request.method === "GET") {
+      result = await diskQrPoll(env, url, request);
     } else {
       return json({ error: "Not Found" }, 404);
     }
@@ -172,6 +179,7 @@ async function handleDisk(request, env, url) {
     if (result && result.source === "refresh" && result.newAccessToken) {
       extra["x-baidu-access-token"] = result.newAccessToken;
     }
+    if (result && result.qrCookie) extra["x-qr-cookie"] = result.qrCookie;
     return json({ ok: true, ...result }, 200, extra);
   } catch (e) {
     const status = e && e.status ? e.status : 500;
@@ -479,6 +487,187 @@ function formatSize(s) {
   if (s < 1048576) return `${(s / 1024).toFixed(1)} KB`;
   if (s < 1073741824) return `${(s / 1048576).toFixed(1)} MB`;
   return `${(s / 1073741824).toFixed(2)} GB`;
+}
+
+// ==================== 网盘登录管理（/disk/auth/*） ====================
+//
+// 目的：在后台 /admin/disk/ 页面查看百度三类凭证（access_token / refresh_token
+//   / BDUSS）的有效性，并提供扫码登录获取 BDUSS/STOKEN。Worker 不能动态修改
+//   自身 Secret，所以扫码得到的凭证通过响应体返回前端，由用户复制 wrangler
+//   secret put 命令在本地终端执行更新。
+// cookie jar：百度扫码登录需要跨请求保持会话（BAIDUID 等），Worker 无持久内
+//   存，所以把 cookie 序列化后通过响应头 x-qr-cookie 下发，前端下次请求通过
+//   请求头 X-QR-Cookie 回传，实现"无状态"会话保持。
+
+/** 宽松解析：兼容纯 JSON 与 JSONP（callback({...})，百度登录接口常见） */
+function parseLoose(text) {
+  if (typeof text !== "string") return null;
+  try {
+    return JSON.parse(text);
+  } catch {}
+  const m = text.match(/\((\{[\s\S]*\})\s*\)\s*;?\s*$/);
+  if (m) {
+    try {
+      return JSON.parse(m[1]);
+    } catch {}
+    try {
+      return JSON.parse(m[1].replace(/'([A-Za-z_]\w*)'\s*:/g, '"$1":'));
+    } catch {}
+  }
+  return null;
+}
+
+/** 从 Response 收集 Set-Cookie 到 jar（Map） */
+function ingestCookies(res, jar) {
+  const sc = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
+  for (const c of sc) {
+    const pair = c.split(";")[0];
+    const i = pair.indexOf("=");
+    if (i > 0) jar.set(pair.slice(0, i).trim(), pair.slice(i + 1).trim());
+  }
+}
+
+/** 把 cookie jar 序列化为请求头字符串 */
+function cookieHeader(jar) {
+  return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
+}
+
+/** 从字符串还原 cookie jar（Map） */
+function parseCookieHeader(str) {
+  const jar = new Map();
+  for (const part of String(str || "").split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0) jar.set(part.slice(0, i).trim(), part.slice(i + 1).trim());
+  }
+  return jar;
+}
+
+/** GET /disk/auth/status：检测三类凭证有效性（只读，不修改任何 Secret）
+ *  - access_token：调 xpan uinfo（轻量），errno=0 有效 / errno=-6 失效
+ *  - refresh_token：只检测是否配置（实际调用会真刷新，可能触发百度风控）
+ *  - BDUSS：调 gettemplatevariable 取 bdstoken，errno=0 有效 / -6 失效 */
+async function diskAuthStatus(env) {
+  const auth = { accessToken: "unset", refreshToken: "unset", bduss: "unset", detail: {} };
+
+  // 1) access_token
+  if (env.BAIDU_ACCESS_TOKEN) {
+    try {
+      const r = await fetch(`${BAIDU_XPAN}/nas?method=uinfo&access_token=${encodeURIComponent(env.BAIDU_ACCESS_TOKEN)}`);
+      const j = await r.json().catch(() => null);
+      if (j && j.errno === 0) {
+        auth.accessToken = "ok";
+        if (j.bduid) auth.detail.baiduId = j.bduid;
+      } else if (j && j.errno === -6) {
+        auth.accessToken = "expired";
+      } else {
+        auth.accessToken = "unknown";
+      }
+      auth.detail.accessTokenErrno = j ? j.errno : null;
+    } catch {
+      auth.accessToken = "unknown";
+    }
+  }
+
+  // 2) refresh_token：只看是否配置，不主动调用（避免触发风控）
+  auth.refreshToken = env.BAIDU_APP_KEY && env.BAIDU_SECRET_KEY && env.BAIDU_REFRESH_TOKEN ? "configured" : "unset";
+
+  // 3) BDUSS
+  if (env.BAIDU_BDUSS) {
+    if (env.BAIDU_BDUSS.length < 100) {
+      auth.bduss = "invalid";
+      auth.detail.bdussHint = "长度不足（应为 ~190 字符），疑似临时值或粘贴错误";
+    } else {
+      try {
+        const cookie = env.BAIDU_STOKEN
+          ? `BDUSS=${env.BAIDU_BDUSS}; STOKEN=${env.BAIDU_STOKEN}`
+          : `BDUSS=${env.BAIDU_BDUSS}`;
+        const r = await fetch(
+          "https://pan.baidu.com/api/gettemplatevariable?app_id=250528&clienttype=0&web=1&fields=%5B%22bdstoken%22%5D",
+          { headers: { Cookie: cookie, "User-Agent": WEB_UA, Referer: "https://pan.baidu.com/disk/main" } }
+        );
+        const j = await r.json().catch(() => null);
+        if (j && j.errno === 0 && j.result && j.result.bdstoken) {
+          auth.bduss = "ok";
+        } else if (j && j.errno === -6) {
+          auth.bduss = "expired";
+        } else {
+          auth.bduss = "unknown";
+        }
+        auth.detail.bdussErrno = j ? j.errno : null;
+      } catch {
+        auth.bduss = "unknown";
+      }
+    }
+  }
+
+  return { auth };
+}
+
+/** GET /disk/auth/qrlogin：初始化扫码 → 返回二维码图片 URL + sign + 会话 cookie
+ *  前端保存 qrCookie，后续 /disk/auth/qrpoll 请求带 X-QR-Cookie 头回传 */
+async function diskQrInit() {
+  const jar = new Map();
+  const res = await fetch(`${BAIDU_PASSPORT}/v2/api/getqrcode?lp=pc`, {
+    headers: { "User-Agent": WEB_UA, Referer: "https://pan.baidu.com/" },
+  });
+  ingestCookies(res, jar);
+  const code = parseLoose(await res.text());
+  if (!code || !code.imgurl || !code.sign) {
+    throw httpError(502, `获取登录二维码失败：${JSON.stringify(code).slice(0, 200)}`);
+  }
+  const imgurl = String(code.imgurl).startsWith("http") ? code.imgurl : `https://${code.imgurl}`;
+  return { imgurl, sign: code.sign, qrCookie: cookieHeader(jar) };
+}
+
+/** GET /disk/auth/qrpoll?sign=xxx：轮询扫码状态（需带 X-QR-Cookie 头）
+ *  - 未扫码：百度 unicast 长轮询返回 errno=1（超时），本端返回 status="waiting"
+ *  - 已扫码确认：拿到临时 bduss → 立即调 qrbdusslogin 换正式 BDUSS/STOKEN
+ *  Worker 单次请求 CPU 时间有限，不能 180s 长等；前端每 2.5s 调一次本端点 */
+async function diskQrPoll(env, url, request) {
+  const sign = url.searchParams.get("sign");
+  if (!sign) throw httpError(400, "缺少 sign 参数");
+  const qrCookie = request.headers.get("X-QR-Cookie") || "";
+  const jar = parseCookieHeader(qrCookie);
+  const H = (extra = {}) => ({
+    "User-Agent": WEB_UA,
+    Referer: "https://pan.baidu.com/",
+    ...extra,
+    Cookie: cookieHeader(jar),
+  });
+
+  // 1) 长轮询 unicast（百度侧约 2-30s 返回，errno=1 为超时未扫码）
+  const pr = await fetch(
+    `${BAIDU_PASSPORT}/channel/unicast?channel_id=${encodeURIComponent(sign)}&callback=bdqr&lp=pc`,
+    { headers: H() }
+  );
+  ingestCookies(pr, jar);
+  const pj = parseLoose(await pr.text());
+  if (!pj || pj.errno !== 0 || !pj.channel_v) {
+    return { status: "waiting", qrCookie: cookieHeader(jar) };
+  }
+  const cv = parseLoose(pj.channel_v);
+  if (!cv || !cv.v) {
+    return { status: "waiting", qrCookie: cookieHeader(jar) };
+  }
+  const tmpBduss = cv.v;
+
+  // 2) 用临时 bduss 换正式凭证（Set-Cookie 头下发 BDUSS/STOKEN）
+  const lr = await fetch(
+    `${BAIDU_PASSPORT}/v3/login/main/qrbdusslogin?bduss=${encodeURIComponent(tmpBduss)}` +
+      `&u=${encodeURIComponent("https://pan.baidu.com/")}&clientfrom=web&lp=pc&loginmerge=true&actionlog&v=2&getcookies=1&callback=bdlogin`,
+    { headers: H() }
+  );
+  ingestCookies(lr, jar);
+  const lj = parseLoose(await lr.text());
+  const sess = (lj && lj.data && lj.data.session) || {};
+  const bduss = jar.get("BDUSS") || sess.bduss || "";
+  const stoken = jar.get("STOKEN") || sess.stoken || "";
+  // 正式 BDUSS 约 190 字符；32 位的是临时 v，不能用于网页接口
+  if (bduss.length < 100) {
+    const msg = (lj && lj.errInfo && lj.errInfo.msg) || (lj && lj.message) || "响应中无正式 BDUSS";
+    throw httpError(502, `换取登录凭证失败：${msg}（请重新扫码）`);
+  }
+  return { status: "done", bduss, stoken, qrCookie: cookieHeader(jar) };
 }
 
 // ---------- 纯 JS MD5（WebCrypto 不提供 MD5；已与 node:crypto 对拍验证） ----------

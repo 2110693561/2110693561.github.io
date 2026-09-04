@@ -371,6 +371,115 @@
         line-height: 1.7;
       }
 
+      /* ---------- 登录管理弹窗 ---------- */
+      .auth-overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,.5);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .auth-overlay[hidden] { display: none; }
+      .auth-dialog {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        width: 560px;
+        max-width: 92vw;
+        max-height: 86vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        box-shadow: var(--shadow-md);
+      }
+      .auth-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        font-weight: 600;
+      }
+      .auth-body {
+        padding: 16px;
+        overflow-y: auto;
+        flex: 1;
+      }
+      .auth-section { margin-bottom: 20px; }
+      .auth-section:last-child { margin-bottom: 0; }
+      .auth-sec-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+      .auth-sec-title h3 { margin: 0; font-size: 14px; font-weight: 600; }
+      .auth-tip { margin: 0 0 12px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+      .auth-tip code { font-size: 11px; }
+      .auth-status-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+      .auth-stat {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        grid-template-rows: auto auto;
+        gap: 2px 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--bg);
+      }
+      .auth-stat .stat-name {
+        grid-row: 1; grid-column: 1;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .auth-stat .stat-val {
+        grid-row: 1; grid-column: 2;
+        font-size: 13px;
+        font-weight: 600;
+        text-align: right;
+      }
+      .auth-stat .stat-hint {
+        grid-row: 2; grid-column: 1 / -1;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .stat-val[data-state="ok"],
+      .stat-val[data-state="configured"] { color: var(--ok); }
+      .stat-val[data-state="expired"],
+      .stat-val[data-state="invalid"] { color: var(--danger); }
+      .stat-val[data-state="unset"],
+      .stat-val[data-state="unknown"] { color: var(--muted); }
+      #qr-area { text-align: center; }
+      .qr-status { margin: 6px 0; color: var(--muted); font-size: 13px; }
+      .cmd-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+      .cmd-code {
+        flex: 1;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 12px;
+        padding: 8px 10px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text);
+        word-break: break-all;
+      }
+      .auth-result-box {
+        background: var(--accent-soft);
+        border-radius: var(--radius-sm);
+        padding: 12px;
+        margin-top: 12px;
+      }
+      .auth-result-box .ok-line { margin: 0 0 8px; color: var(--ok); font-size: 13px; font-weight: 600; }
+      .auth-result-box .cmd-label { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+      .auth-result-box .tail-tip { color: var(--muted); font-size: 11px; margin-top: 8px; line-height: 1.6; }
+
       @media (max-width: 640px) {
         .fname {
           max-width: 140px;
@@ -396,6 +505,7 @@
           <button class="btn" id="btn-browse-dir" type="button" title="浏览选择文件夹">📁</button>
           <button class="btn primary" id="btn-upload" type="button">⬆ 上传</button>
         </span>
+        <button class="btn" id="btn-auth" type="button" hidden>🔑 网盘登录</button>
         <input type="file" id="file-input" hidden />
         <button class="icon-btn" id="theme-toggle" type="button" title="切换明暗主题">🌙</button>
       </div>
@@ -445,6 +555,58 @@
           · 上传单文件上限 64MB；更大的文件请用本地 <code>npm run baidu:sync</code>。
         </p>
       </div>
+
+      <!-- 登录管理弹窗 -->
+      <div class="auth-overlay" id="auth-overlay" hidden>
+        <div class="auth-dialog">
+          <div class="auth-head">
+            <span>🔑 百度网盘登录管理</span>
+            <button class="btn" id="btn-auth-close" type="button">✕</button>
+          </div>
+          <div class="auth-body" id="auth-body">
+            <!-- 凭证状态 -->
+            <div class="auth-section">
+              <div class="auth-sec-title">
+                <h3>凭证状态</h3>
+                <button class="btn" id="btn-auth-check" type="button">↻ 重新检测</button>
+              </div>
+              <div class="auth-status-grid" id="auth-status-grid">
+                <div class="auth-stat" data-stat="accessToken">
+                  <span class="stat-name">access_token</span>
+                  <span class="stat-val">检测中…</span>
+                  <span class="stat-hint">xpan API 用，30 天有效</span>
+                </div>
+                <div class="auth-stat" data-stat="refreshToken">
+                  <span class="stat-name">refresh_token</span>
+                  <span class="stat-val">检测中…</span>
+                  <span class="stat-hint">access_token 失效时降级刷新</span>
+                </div>
+                <div class="auth-stat" data-stat="bduss">
+                  <span class="stat-name">BDUSS</span>
+                  <span class="stat-val">检测中…</span>
+                  <span class="stat-hint">创建分享 / 浏览全盘用</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 扫码登录 -->
+            <div class="auth-section">
+              <div class="auth-sec-title">
+                <h3>扫码登录（获取 BDUSS / STOKEN）</h3>
+              </div>
+              <p class="auth-tip">
+                扫码成功后下方显示凭证值，复制后在本地 <code>oauth-worker</code> 目录执行
+                <code>wrangler secret put</code> 粘贴更新即可。access_token 需在本地跑
+                <code>npm run baidu:login</code> 刷新后取 <code>.baidu-token.json</code> 的值。
+              </p>
+              <div id="qr-area">
+                <button class="btn primary" id="btn-qr-start" type="button">显示二维码</button>
+              </div>
+              <div id="qr-result" hidden></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -471,6 +633,14 @@
         progressBar: document.querySelector("#progress > i"),
         rotateBanner: $("rotate-banner"),
         themeToggle: $("theme-toggle"),
+        btnAuth: $("btn-auth"),
+        btnAuthClose: $("btn-auth-close"),
+        authOverlay: $("auth-overlay"),
+        authStatusGrid: $("auth-status-grid"),
+        btnAuthCheck: $("btn-auth-check"),
+        btnQrStart: $("btn-qr-start"),
+        qrArea: $("qr-area"),
+        qrResult: $("qr-result"),
       };
 
       function getToken() {
@@ -581,6 +751,7 @@
         el.main.hidden = false;
         el.btnRefresh.hidden = false;
         el.dirBar.hidden = false;
+        el.btnAuth.hidden = false;
         refresh();
       }
 
@@ -588,6 +759,7 @@
         el.main.hidden = true;
         el.btnRefresh.hidden = true;
         el.dirBar.hidden = true;
+        el.btnAuth.hidden = true;
         el.loginCard.hidden = false;
         el.rotateBanner.style.display = "none";
         if (msg) setStatus(msg, true);
@@ -925,6 +1097,164 @@
           document.execCommand("copy");
         } catch (e) {}
         document.body.removeChild(ta);
+      }
+
+      // ==================== 网盘登录管理 ====================
+      var qrCookie = "";
+      var qrSign = "";
+      var qrTimer = null;
+      var qrDeadline = 0;
+
+      el.btnAuth.addEventListener("click", openAuthManager);
+      el.btnAuthClose.addEventListener("click", closeAuthManager);
+      el.authOverlay.addEventListener("click", function (e) {
+        if (e.target === el.authOverlay) closeAuthManager();
+      });
+      el.btnAuthCheck.addEventListener("click", checkAuthStatus);
+      el.btnQrStart.addEventListener("click", startQrLogin);
+
+      function openAuthManager() {
+        el.authOverlay.hidden = false;
+        checkAuthStatus();
+      }
+      function closeAuthManager() {
+        el.authOverlay.hidden = true;
+        stopQrPoll();
+      }
+
+      function checkAuthStatus() {
+        ["accessToken", "refreshToken", "bduss"].forEach(function (k) {
+          var node = el.authStatusGrid.querySelector('[data-stat="' + k + '"]');
+          var val = node.querySelector(".stat-val");
+          val.textContent = "检测中…";
+          val.removeAttribute("data-state");
+        });
+        api("/disk/auth/status")
+          .then(function (j) {
+            var a = (j && j.auth) || {};
+            renderAuthStat("accessToken", a.accessToken);
+            renderAuthStat("refreshToken", a.refreshToken);
+            renderAuthStat("bduss", a.bduss, (a.detail && a.detail.bdussHint) || "");
+          })
+          .catch(function (e) {
+            if (String(e.message) === "登录已过期") return;
+            setStatus("凭证检测失败：" + e.message, true);
+          });
+      }
+
+      function renderAuthStat(key, val, extra) {
+        var node = el.authStatusGrid.querySelector('[data-stat="' + key + '"]');
+        var valEl = node.querySelector(".stat-val");
+        var hintEl = node.querySelector(".stat-hint");
+        valEl.setAttribute("data-state", val);
+        var labelMap = {
+          accessToken: { ok: "✓ 有效", expired: "✗ 已过期", unset: "未配置", unknown: "未知（检测异常）" },
+          refreshToken: { configured: "已配置", unset: "未配置" },
+          bduss: { ok: "✓ 有效", expired: "✗ 已失效", invalid: "✗ 长度不足", unset: "未配置", unknown: "未知（检测异常）" },
+        };
+        var map = labelMap[key] || {};
+        valEl.textContent = map[val] || val;
+        if (extra) hintEl.textContent = extra;
+      }
+
+      function startQrLogin() {
+        stopQrPoll();
+        el.qrResult.hidden = true;
+        el.qrArea.innerHTML = '<div style="color:var(--muted);padding:12px">正在获取二维码…</div>';
+        fetch(WORKER + "/disk/auth/qrlogin", { headers: { Authorization: "Bearer " + getToken() } })
+          .then(function (r) {
+            if (r.status === 401) { clearToken(); showLogin("登录已过期，请重新登录"); throw new Error("登录已过期"); }
+            qrCookie = r.headers.get("x-qr-cookie") || "";
+            return r.json();
+          })
+          .then(function (j) {
+            if (!j.ok) { el.qrArea.innerHTML = '<div style="color:red;padding:12px">' + (j.error || "获取二维码失败") + "</div>"; return; }
+            qrSign = j.sign || "";
+            el.qrArea.innerHTML =
+              '<img src="' + j.imgurl + '" alt="二维码" style="max-width:220px;border:1px solid var(--border);border-radius:8px" />' +
+              '<p style="margin:8px 0 0;color:var(--muted)">用【百度网盘 App】扫码并点「确认登录」</p>' +
+              '<p class="qr-status" id="qr-status">等待扫码…</p>';
+            qrDeadline = Date.now() + 180000;
+            pollQr();
+          })
+          .catch(function (e) {
+            if (String(e.message) !== "登录已过期")
+              el.qrArea.innerHTML = '<div style="color:red;padding:12px">网络错误</div>';
+          });
+      }
+
+      function pollQr() {
+        if (Date.now() > qrDeadline) {
+          stopQrPoll();
+          var st = document.getElementById("qr-status");
+          if (st) st.textContent = "扫码超时，请重新获取二维码";
+          return;
+        }
+        fetch(WORKER + "/disk/auth/qrpoll?sign=" + encodeURIComponent(qrSign), {
+          headers: { Authorization: "Bearer " + getToken(), "X-QR-Cookie": qrCookie },
+        })
+          .then(function (r) {
+            if (r.status === 401) { stopQrPoll(); clearToken(); showLogin("登录已过期"); throw new Error("登录已过期"); }
+            var nc = r.headers.get("x-qr-cookie");
+            if (nc) qrCookie = nc;
+            return r.json();
+          })
+          .then(function (j) {
+            if (!j.ok) { stopQrPoll(); el.qrArea.innerHTML = '<div style="color:red;padding:12px">' + (j.error || "轮询失败") + "</div>"; return; }
+            if (j.qrCookie) qrCookie = j.qrCookie;
+            if (j.status === "done") {
+              stopQrPoll();
+              showAuthResult(j.bduss, j.stoken);
+            } else {
+              var st = document.getElementById("qr-status");
+              if (st) st.textContent = "等待扫码确认…（" + Math.max(0, Math.ceil((qrDeadline - Date.now()) / 1000)) + "s）";
+              qrTimer = setTimeout(pollQr, 2500);
+            }
+          })
+          .catch(function () {
+            qrTimer = setTimeout(pollQr, 2500);
+          });
+      }
+
+      function stopQrPoll() {
+        if (qrTimer) { clearTimeout(qrTimer); qrTimer = null; }
+      }
+
+      function showAuthResult(bduss, stoken) {
+        el.qrResult.hidden = false;
+        var html =
+          '<div class="auth-result-box">' +
+          '<p class="ok-line">✓ 扫码成功！在本地 <code>oauth-worker</code> 目录执行命令，按提示粘贴对应凭证值后回车：</p>' +
+          '<div class="cmd-label">① 更新 BDUSS（创建分享必须）</div>' +
+          '<div class="cmd-row"><code class="cmd-code">npx wrangler secret put BAIDU_BDUSS</code>' +
+          '<button class="btn" data-action="cmd" type="button" title="复制命令">⌘</button>' +
+          '<button class="btn primary" data-action="val" data-key="bduss" type="button">复制值</button></div>';
+        if (stoken) {
+          html +=
+            '<div class="cmd-label">② 可选更新 STOKEN（部分接口需要）</div>' +
+            '<div class="cmd-row"><code class="cmd-code">npx wrangler secret put BAIDU_STOKEN</code>' +
+            '<button class="btn" data-action="cmd" type="button" title="复制命令">⌘</button>' +
+            '<button class="btn primary" data-action="val" data-key="stoken" type="button">复制值</button></div>';
+        }
+        html +=
+          '<p class="tail-tip">· 更新后执行 <code>npx wrangler deploy</code> 生效。<br />' +
+          '· 更新完回到本页点「↻ 重新检测」验证。<br />' +
+          '· access_token 需在本地跑 <code>npm run baidu:login</code> 刷新后，从 <code>.baidu-token.json</code> 取 <code>access_token</code> 值，再 <code>wrangler secret put BAIDU_ACCESS_TOKEN</code>。</p>' +
+          '</div>';
+        el.qrResult.innerHTML = html;
+        el.qrResult._bduss = bduss;
+        el.qrResult._stoken = stoken;
+        el.qrResult.querySelectorAll("button[data-action]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            if (btn.getAttribute("data-action") === "cmd") {
+              copyText(btn.parentElement.querySelector(".cmd-code").textContent, btn);
+            } else {
+              var key = btn.getAttribute("data-key");
+              var val = key === "bduss" ? el.qrResult._bduss : el.qrResult._stoken;
+              copyText(val, btn);
+            }
+          });
+        });
       }
 
       // ==================== 启动 ====================

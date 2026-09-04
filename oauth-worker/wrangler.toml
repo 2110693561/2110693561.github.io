@@ -5,10 +5,11 @@
 #   npx wrangler secret put GITHUB_CLIENT_SECRET
 #   # —— 网盘管理端点（/disk/*）所需 Secret ——
 #   npx wrangler secret put GITHUB_ALLOWED_OWNER     # 值 = 你的 GitHub 用户名（或数字 ID）
+#   npx wrangler secret put BAIDU_ACCESS_TOKEN       # 推荐：直接用 access_token（30 天有效，从本地 .baidu-token.json 取值，跳过刷新避免风控）
 #   npx wrangler secret put BAIDU_APP_KEY            # 开放平台 AppKey
 #   npx wrangler secret put BAIDU_SECRET_KEY         # 开放平台 SecretKey
-#   npx wrangler secret put BAIDU_REFRESH_TOKEN      # 本地 .baidu-token.json 里的 refresh_token
-#   npx wrangler secret put BAIDU_BDUSS              # 扫码登录凭证（创建分享用，npm run baidu:login 获取）
+#   npx wrangler secret put BAIDU_REFRESH_TOKEN      # 本地 .baidu-token.json 里的 refresh_token（access_token 过期时降级刷新）
+#   npx wrangler secret put BAIDU_BDUSS              # 扫码登录凭证（创建分享用，可由后台 /admin/disk/ 「🔑 网盘登录」扫码获取）
 #   npx wrangler secret put BAIDU_STOKEN             # 可选，与 BDUSS 配套
 #   npx wrangler deploy
 # 部署完成后把 Worker 地址填入 public/admin/config.yml 的 base_url
@@ -18,6 +19,13 @@
 #   MANIFEST_RAW_URL  公开清单地址，/disk/list 合并分享状态用（拉不到不影响列表）
 # 若百度轮换 refresh_token，/disk/* 响应会带 x-baidu-rotated: 1，
 # 重新 wrangler secret put BAIDU_REFRESH_TOKEN 后即恢复。
+#
+# 网盘登录管理（/disk/auth/*，后台 /admin/disk/ 「🔑 网盘登录」入口）：
+#   GET /disk/auth/status    检测 access_token/refresh_token/BDUSS 三类凭证有效性
+#   GET /disk/auth/qrlogin   生成百度扫码登录二维码（返回 imgurl + sign + 会话 cookie）
+#   GET /disk/auth/qrpoll    轮询扫码结果，成功返回 BDUSS/STOKEN（Worker 不能自写 Secret，
+#                            凭证值由前端展示，用户在本地 wrangler secret put 更新）
+#   cookie 跨请求：响应头 x-qr-cookie 下发，前端下次请求带 X-QR-Cookie 头回传
 
 name = "decap-oauth-worker"
 main = "src/index.js"

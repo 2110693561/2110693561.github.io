@@ -2182,5 +2182,10 @@
       }
     })();
     </script>
+    <!-- 网盘管理入口：固定右下角浮动按钮，跳转 /admin/disk/ -->
+    <a href="/admin/disk/" target="_self"
+       style="position:fixed;right:20px;bottom:20px;z-index:9998;display:inline-flex;align-items:center;gap:6px;padding:10px 18px;background:#1f2937;color:#fff;border-radius:999px;box-shadow:0 8px 24px rgba(23,26,46,.25);text-decoration:none;font-size:14px;font-family:system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;transition:background .15s,transform .15s"
+       onmouseover="this.style.background='#0f172a';this.style.transform='translateY(-1px)'"
+       onmouseout="this.style.background='#1f2937';this.style.transform=''">☁️ 网盘管理</a>
   </body>
 </html>
