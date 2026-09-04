@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { TOKEN_RE, buildCardHtml, buildMissingHtml, findEntry } from "./netdisk-card.mjs";
+import { TOKEN_RE, parseToken, buildCardHtml, buildMissingHtml, findEntry } from "./netdisk-card.mjs";
 
 let manifestCache = null;
 
@@ -26,13 +26,18 @@ function splitTextNode(node) {
   for (const m of node.value.matchAll(TOKEN_RE)) {
     const start = m.index;
     if (start > last) parts.push({ type: "text", value: node.value.slice(last, start) });
-    const name = m[1];
-    const entry = findEntry(loadManifest(), name);
-    if (entry) {
-      parts.push({ type: "html", value: buildCardHtml(entry) });
+    const { basename, url, code } = parseToken(m[1]);
+    if (url) {
+      // 扩展语法：内嵌 url+code → 直接渲染卡片，不查清单
+      parts.push({ type: "html", value: buildCardHtml({ basename, size: 0, link: url, code }) });
     } else {
-      console.warn(`[remark-netdisk] 网盘中未找到「${name}」，已渲染为占位提示（可在 /admin/disk/ 上传后重跑同步）`);
-      parts.push({ type: "html", value: buildMissingHtml(name) });
+      const entry = findEntry(loadManifest(), basename);
+      if (entry) {
+        parts.push({ type: "html", value: buildCardHtml(entry) });
+      } else {
+        console.warn(`[remark-netdisk] 网盘中未找到「${basename}」，已渲染为占位提示（可在 /admin/disk/ 上传后重跑同步）`);
+        parts.push({ type: "html", value: buildMissingHtml(basename) });
+      }
     }
     last = start + m[0].length;
   }

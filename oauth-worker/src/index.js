@@ -157,6 +157,8 @@ async function handleDisk(request, env, url) {
       result = await diskList(env);
     } else if (url.pathname === "/disk/share" && request.method === "POST") {
       result = await diskShare(env, request);
+    } else if (url.pathname === "/disk/browse" && request.method === "GET") {
+      result = await diskBrowse(env, url);
     } else if (url.pathname === "/disk/upload" && request.method === "POST") {
       result = await diskUpload(env, request);
     } else {
@@ -281,6 +283,31 @@ async function diskList(env) {
     f.code = l ? l.code : null;
   }
   return { dir, files, rotated, source, newAccessToken: tr.newAccessToken };
+}
+
+/** GET /disk/browse?dir=/：用 BDUSS + 网页 API 列任意目录（浏览全盘） */
+async function diskBrowse(env, url) {
+  const bduss = env.BAIDU_BDUSS;
+  if (!bduss) throw httpError(500, "缺少 BAIDU_BDUSS Secret，无法浏览全盘（仅在已配置扫码登录凭证时可用）");
+  const dir = url.searchParams.get("dir") || "/";
+  const cookieParts = [`BDUSS=${bduss}`];
+  if (env.BAIDU_STOKEN) cookieParts.push(`STOKEN=${env.BAIDU_STOKEN}`);
+  const apiUrl = `https://pan.baidu.com/api/list?dir=${encodeURIComponent(dir)}&web=1&clienttype=0&num=200&order=name`;
+  const res = await fetch(apiUrl, {
+    headers: { Cookie: cookieParts.join("; "), "User-Agent": WEB_UA },
+  });
+  const j = await res.json().catch(() => null);
+  if (!j || j.errno !== 0) {
+    const msgs = { "-9": "路径不存在", "-7": "无访问权限", "2": "目录不存在" };
+    throw httpError(502, `百度网盘浏览失败：errno=${j ? j.errno : "非JSON"} ${msgs[String(j ? j.errno : "")] || ""}`);
+  }
+  const files = (j.list || []).map((f) => ({
+    name: f.server_filename,
+    size: f.size || 0,
+    isdir: Boolean(f.isdir),
+    fsId: f.fs_id,
+  }));
+  return { dir, files, source: "browse" };
 }
 
 /** POST /disk/share  body {fsId}：网页端内部接口创建带提取码分享 */

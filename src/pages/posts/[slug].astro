@@ -390,8 +390,8 @@ const base = import.meta.env.BASE_URL;
           const ta = form.querySelector<HTMLTextAreaElement>("textarea")!;
           const picker = (window as any).NetdiskPicker;
           if (picker && picker.open) {
-            picker.open((basename: string) => {
-              const text = `{{netdisk ${basename}}}`;
+            picker.open((result: string) => {
+              const text = result.startsWith("{{") ? result : `{{netdisk ${result}}}`;
               const start = ta.selectionStart, end = ta.selectionEnd;
               ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
               ta.selectionStart = ta.selectionEnd = start + text.length;
