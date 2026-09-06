@@ -1647,6 +1647,10 @@
             alert("导入需要登录令牌，请退出后台重新登录");
             return;
           }
+          // 根据当前集合决定目录前缀与文案（随手记 / 文章）
+          var col = collection();
+          var dirName = col === "blog" ? "blog" : "notes";
+          var label = col === "blog" ? "文章" : "随手记";
           var IMG = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
           var SKIP = /(^|\/)(\.DS_Store|Thumbs\.db|desktop\.ini)$/i;
           function relOf(f) {
@@ -1706,7 +1710,7 @@
                 noteMap[im.name.toLowerCase()] = im;
               });
               // 改写引用：匹配到的换成线上地址；没匹配的换成占位文本（防止构建报错）
-              var imgDir = "public/images/notes/" + slug + "/";
+              var imgDir = "public/images/" + dirName + "/" + slug + "/";
               var uploaded = {};
               body = body.replace(
                 /(!\[[^\]]*\]\()([^)\s]+)(\))/g,
@@ -1719,7 +1723,7 @@
                   var ext = (bn.match(IMG) || [""])[0].toLowerCase();
                   var newName = safeName(bn.replace(IMG, "")) + ext;
                   if (!newName) newName = "img" + ext;
-                  var url = "/images/notes/" + slug + "/" + newName;
+                  var url = "/images/" + dirName + "/" + slug + "/" + newName;
                   uploaded[bn.toLowerCase()] = { file: hit, name: newName };
                   return pre + url + post;
                 }
@@ -1742,7 +1746,7 @@
                 jobFiles.push({ path: imgDir + item.name, content: data });
                 imgCount++;
               }
-              jobFiles.push({ path: "src/content/notes/" + fname, content: b64(body) });
+              jobFiles.push({ path: "src/content/" + dirName + "/" + fname, content: b64(body) });
               okCount++;
             }
             // 整个导入合并为一次 commit，避免爆发式提交触发限流把后台登出
@@ -1751,11 +1755,11 @@
               await ghPutFilesBatch(
                 t,
                 jobFiles,
-                "导入随手记 " + okCount + " 篇" + (imgCount ? "、" + imgCount + " 张图片" : "")
+                "导入" + label + " " + okCount + " 篇" + (imgCount ? "、" + imgCount + " 张图片" : "")
               );
             }
             toast(
-              "已导入 " + okCount + " 篇随手记" + (imgCount ? "、" + imgCount + " 张图片" : "") + "，构建后生效"
+              "已导入 " + okCount + " 篇" + label + (imgCount ? "、" + imgCount + " 张图片" : "") + "，构建后生效"
             );
             setTimeout(function () {
               location.reload();
@@ -1846,7 +1850,8 @@
         })();
 
         function injectImport() {
-          if (collection() !== "notes") {
+          var col = collection();
+          if (col !== "notes" && col !== "blog") {
             var oldImp = document.getElementById("qa-import-notes");
             if (oldImp) oldImp.remove();
             var oldFld = document.getElementById("qa-import-folder");
@@ -1854,15 +1859,16 @@
             return;
           }
           if (document.getElementById("qa-import-notes")) return;
-          // 放在顶部标题卡「+ 随手记」新建按钮右侧（紧挨着）
-          var anchor = document.querySelector('#nc-root a[href*="collections/notes/new"]');
+          var label = col === "blog" ? "文章" : "随手记";
+          // 放在顶部标题卡「+ 新建」按钮右侧（紧挨着）
+          var anchor = document.querySelector('#nc-root a[href*="collections/' + col + '/new"]');
           if (!anchor) return;
           var btn = document.createElement("button");
           btn.id = "qa-import-notes";
           btn.type = "button";
           btn.className = "qa-import-pill";
-          btn.textContent = "📎 导入笔记";
-          btn.title = "选择一个或多个 .md / .txt 文件导入（带图片的笔记建议用旁边的「📁 导入文件夹」）";
+          btn.textContent = "📎 导入" + label;
+          btn.title = "选择一个或多个 .md / .txt 文件导入" + (col === "blog" ? "（带图片的建议用「📁 导入文件夹」）" : "（带图片的笔记建议用旁边的「📁 导入文件夹」）");
           btn.addEventListener("click", function () {
             noteInput.click();
           });
