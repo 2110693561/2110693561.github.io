@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>人生决策 · 高性价比人生指南</title>
+    <meta name="robots" content="index" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root {
+        --bg: #f5f6fa;
+        --panel: #ffffff;
+        --border: #e5e8ef;
+        --text: #1a1f36;
+        --muted: #697089;
+        --accent: #1f2937;
+        --accent-hover: #0f172a;
+        --accent-soft: #eef0f4;
+        --ok: #16a34a;
+        --radius: 12px;
+        --shadow-sm: 0 1px 2px rgba(23, 26, 46, 0.05);
+        --shadow-md: 0 8px 24px rgba(23, 26, 46, 0.09);
+      }
+      html[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #0e1117;
+        --panel: #161b24;
+        --border: #262d3d;
+        --text: #e6ebf4;
+        --muted: #8b96a8;
+        --accent: #3a4356;
+        --accent-hover: #46516a;
+        --accent-soft: #232b3a;
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+        --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+        min-height: 100vh;
+      }
+      .wrap {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 48px 20px 60px;
+      }
+      .back {
+        display: inline-block;
+        font-size: 13px;
+        color: var(--muted);
+        text-decoration: none;
+        margin-bottom: 24px;
+      }
+      .back:hover { color: var(--text); }
+      h1 {
+        font-size: 28px;
+        margin: 0 0 8px;
+        line-height: 1.3;
+      }
+      .subtitle {
+        font-size: 16px;
+        color: var(--muted);
+        margin: 0 0 28px;
+        line-height: 1.6;
+      }
+      .stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 28px;
+      }
+      .stat {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 4px 14px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .stat b { color: var(--text); }
+      .cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 32px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 22px;
+        font-size: 15px;
+        font-weight: 600;
+        border-radius: 10px;
+        text-decoration: none;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        transition: border-color 0.15s, background 0.15s, transform 0.05s;
+      }
+      .btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+      .btn:active { transform: translateY(1px); }
+      .btn.primary {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+      .btn.primary:hover {
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px 22px;
+        box-shadow: var(--shadow-sm);
+        margin-bottom: 16px;
+      }
+      .card h2 {
+        font-size: 16px;
+        margin: 0 0 10px;
+      }
+      .card p, .card li {
+        font-size: 14px;
+        line-height: 1.7;
+        color: var(--muted);
+        margin: 6px 0;
+      }
+      .card a { color: var(--text); }
+      .credit {
+        margin-top: 28px;
+        padding: 16px 18px;
+        background: var(--panel);
+        border-left: 3px solid var(--accent);
+        border-radius: 0 8px 8px 0;
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+      .credit a { color: var(--text); font-weight: 500; }
+      .credit .cc {
+        display: inline-block;
+        margin-left: 6px;
+        font-size: 12px;
+        padding: 1px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+      }
+      ul { padding-left: 20px; margin: 8px 0; }
+      @media (max-width: 600px) {
+        .wrap { padding: 32px 16px 48px; }
+        h1 { font-size: 22px; }
+        .subtitle { font-size: 14px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <a class="back" href="/">← 返回博客首页</a>
+      <h1>高性价比人生指南</h1>
+      <p class="subtitle">
+        630 条人生建议，每条写明花掉什么、换回什么、证据有多硬，来源只引期刊论文和官方文件。
+        不是任务清单，是按性价比排好的备选单——挑走一两条就算数。
+      </p>
+
+      <div class="stats">
+        <span class="stat"><b>630</b> 条建议</span>
+        <span class="stat">证据 <b>A 420</b> · <b>B 159</b> · <b>C 51</b></span>
+        <span class="stat"><b>1341</b> 条文献链接</span>
+      </div>
+
+      <div class="cta">
+        <a class="btn primary" href="/decisions/HowToLiveBetter.html">📖 进入检索页</a>
+        <a class="btn" href="https://github.com/eternity4719/HowToLiveBetter/releases/download/epub-latest/HowToLiveBetter.pdf" target="_blank" rel="noopener">下载 PDF</a>
+        <a class="btn" href="https://github.com/eternity4719/HowToLiveBetter/releases/download/epub-latest/HowToLiveBetter.epub" target="_blank" rel="noopener">下载 EPUB</a>
+      </div>
+
+      <div class="card">
+        <h2>这本书想回答什么</h2>
+        <ul>
+          <li>几乎不花钱，就能明显降低早死概率的事有哪些？</li>
+          <li>哪些事会让人被骗、摊上官司？</li>
+          <li>没工作没钱时能去领什么？开店、开公司要办什么手续？</li>
+          <li>恋爱结婚生孩子、出国和学手艺的性价比怎么算？</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h2>怎么用这个检索页</h2>
+        <p>点「进入检索页」打开单页应用，可以：</p>
+        <ul>
+          <li>按章节浏览，每章节下有编号条目</li>
+          <li>全文搜索关键词，跳到对应条目</li>
+          <li>每条带证据分级（A/B/C）和原始文献链接</li>
+          <li>复制直链 <code>?sec=1#e-1-23</code> 给别人精准指路</li>
+        </ul>
+      </div>
+
+      <div class="credit">
+        本板块内容版权归原作者 <a href="https://github.com/eternity4719" target="_blank" rel="noopener">eternity4719</a> 所有，
+        原项目仓库：<a href="https://github.com/eternity4719/HowToLiveBetter" target="_blank" rel="noopener">eternity4719/HowToLiveBetter</a>。
+        <span class="cc">CC BY 4.0</span>
+        本站仅作镜像部署以便站内访问，内容与原项目同步；如需引用请以原仓库为准。
+      </div>
+    </div>
+    <script>
+      // 跟随站点明暗主题
+      try {
+        var t = localStorage.getItem("theme");
+        if (t) document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
+  </body>
+</html>
