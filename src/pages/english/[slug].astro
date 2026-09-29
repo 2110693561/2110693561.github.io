@@ -1,0 +1,116 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import LockedContent from "../../components/LockedContent.astro";
+import Giscus from "../../components/Giscus.astro";
+import { getCollection, render } from "astro:content";
+import { experimental_AstroContainer as AstroContainer } from "astro/container";
+import { encryptForBrowser, type EncryptedPayload } from "../../utils/encrypt";
+import { getSortedEnglish, englishUrl, englishTypeAnchor, displayTitle } from "../../utils/english";
+import { formatDate, readingMinutes } from "../../utils/posts";
+
+export async function getStaticPaths() {
+  const entries = await getCollection("english", ({ data }) => !data.draft);
+  return entries.map((entry) => ({
+    params: { slug: entry.id },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+
+// 密码保护：与文章页同款，构建时加密渲染后的 HTML
+let encrypted: EncryptedPayload | undefined;
+if (entry.data.password) {
+  const container = await AstroContainer.create();
+  const html = await container.renderToString(Content);
+  encrypted = encryptForBrowser(html, entry.data.password);
+}
+
+// 上下篇导航（列表按日期倒序）
+const all = await getSortedEnglish();
+const idx = all.findIndex((p) => p.id === entry.id);
+const older = all[idx + 1];
+const newer = all[idx - 1];
+
+const toc = headings.filter((h) => h.depth >= 2 && h.depth <= 4);
+const minutes = readingMinutes(entry.body);
+const base = import.meta.env.BASE_URL;
+const searchQ = (t: string) => `${base}search/?q=${encodeURIComponent(t)}`;
+---
+
+<BaseLayout title={displayTitle(entry)}>
+  <header class="post-header">
+    <h1>{displayTitle(entry)}</h1>
+    <div class="post-meta">
+      <span>{formatDate(entry.data.date)}</span>
+      <a href={englishTypeAnchor(entry.data.type)}>{entry.data.type}</a>
+      <span>约 {minutes} 分钟</span>
+      {entry.data.password && <span class="lock-badge">已加密</span>}
+      <a class="edit-btn" href={`${base}admin/#/collections/english/entries/${entry.id}`} target="_blank">编辑</a>
+    </div>
+    {
+      entry.data.tags.length > 0 && (
+        <div class="tags" style="margin-top: 8px;">
+          {entry.data.tags.map((t) => (
+            <a class="tag" href={searchQ(t)}>
+              {t}
+            </a>
+          ))}
+        </div>
+      )
+    }
+  </header>
+
+  <div class="post-layout">
+    {
+      encrypted ? (
+        <article class="prose">
+          <LockedContent payload={encrypted} />
+        </article>
+      ) : (
+        <article class="prose">
+          <Content />
+        </article>
+      )
+    }
+
+    {
+      toc.length > 0 && (
+        <aside class="toc" aria-label="笔记目录">
+          <div class="toc-title">目录</div>
+          {toc.map((h) => (
+            <a class={`lv${h.depth}`} href={`#${h.slug}`}>
+              {h.text}
+            </a>
+          ))}
+        </aside>
+      )
+    }
+  </div>
+
+  <nav class="post-nav" aria-label="上下篇">
+    {
+      older ? (
+        <a href={englishUrl(older.id)}>
+          <div class="pn-label">← 更早</div>
+          <div class="pn-title">{displayTitle(older)}</div>
+        </a>
+      ) : (
+        <span />
+      )
+    }
+    {
+      newer ? (
+        <a class="next" href={englishUrl(newer.id)}>
+          <div class="pn-label">更新 →</div>
+          <div class="pn-title">{displayTitle(newer)}</div>
+        </a>
+      ) : (
+        <span />
+      )
+    }
+  </nav>
+
+  {!encrypted && <Giscus />}
+</BaseLayout>

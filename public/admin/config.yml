@@ -106,6 +106,37 @@ collections:
         hint: 设置后内容加密，像私密日记一样
       - { name: body, label: 内容, widget: markdown }
 
+  # ---------- 英语学习 ----------
+  - name: english
+    label: 英语学习
+    label_singular: 英语笔记
+    folder: src/content/english
+    slug: "{{year}}-{{month}}-{{day}}-{{slug}}"
+    create: true
+    editor:
+      preview: true
+    sortable_fields: [date, title]
+    view_filters:
+      - { label: 已发布, field: draft, pattern: false }
+      - { label: 草稿, field: draft, pattern: true }
+      - { label: 已隐藏, field: hidden, pattern: true }
+      - { label: 已加密, field: password, pattern: ".+" }
+      - { label: 词汇, field: type, pattern: 词汇 }
+      - { label: 语法, field: type, pattern: 语法 }
+    fields:
+      - { name: date, label: 日期, widget: datetime, format: "YYYY-MM-DD", date_format: "YYYY-MM-DD", time_format: false }
+      - { name: title, label: 标题（可选，留空取正文首句）, widget: string, required: false }
+      - name: type
+        label: 学习类型
+        widget: select
+        default: 词汇
+        options: [词汇, 语法, 听力, 口语, 阅读, 写作, 表达, 综合]
+      - { name: tags, label: 标签, widget: list, required: false, default: [] }
+      - { name: draft, label: 草稿（不发布）, widget: boolean, default: false, required: false }
+      - { name: hidden, label: 隐藏（不在列表显示）, widget: boolean, default: false, required: false }
+      - { name: password, label: 查看密码, widget: string, required: false, hint: 设置后内容加密，访客输入密码才能查看 }
+      - { name: body, label: 内容, widget: markdown }
+
   # ---------- 段落批注 ----------
   - name: annotations
     label: 段落批注

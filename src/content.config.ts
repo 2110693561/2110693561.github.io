@@ -42,6 +42,26 @@ const notes = defineCollection({
   }),
 });
 
+// 英语学习：src/content/english/*.md
+// 独立顶级板块：词汇/语法/听力/口语/阅读/写作/表达/综合，标题可选（低门槛记录）
+const english = defineCollection({
+  loader: glob({
+    pattern: "**/*.md",
+    base: "./src/content/english",
+  }),
+  schema: z.object({
+    date: z.coerce.date(),
+    // 标题可省略，列表页自动取正文首句
+    title: z.string().optional(),
+    // 学习类型：词汇 / 语法 / 听力 / 口语 / 阅读 / 写作 / 表达 / 综合
+    type: z.string().default("综合"),
+    tags: z.array(z.string()).default([]),
+    draft: z.boolean().default(false),
+    hidden: z.boolean().default(false),
+    password: z.string().optional(),
+  }),
+});
+
 // 资料：上传的文件记录，src/files/*.md（附件实体在 public/files/）
 // 用于个人资料库：支持在 /files/ 页面预览与下载
 const files = defineCollection({
@@ -71,4 +91,4 @@ const files = defineCollection({
   }),
 });
 
-export const collections = { blog, notes, files };
+export const collections = { blog, notes, english, files };

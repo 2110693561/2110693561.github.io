@@ -1,0 +1,60 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { getSortedEnglish, groupByType, englishUrl, englishTypeAnchor, displayTitle } from "../../utils/english";
+import { formatDate } from "../../utils/posts";
+
+const list = await getSortedEnglish();
+const groups = groupByType(list);
+const typeCounts = new Map(groups.map(([t, items]) => [t, items.length]));
+const base = import.meta.env.BASE_URL;
+---
+
+<BaseLayout title="英语学习" description="英语学习笔记：词汇、语法、听力、口语、阅读、写作与地道表达。">
+  <div class="page-head with-actions">
+    <div>
+      <h1>英语学习</h1>
+      <p>共 {list.length} 条 · 按类型分组，碎片记录单词、表达与语法</p>
+    </div>
+    <a class="btn primary" href={`${base}admin/#/collections/english/new`} target="_blank">写英语笔记</a>
+  </div>
+
+  {
+    typeCounts.size > 0 && (
+      <div class="chip-cloud">
+        {[...typeCounts].map(([t, n]) => (
+          <a class="chip" href={englishTypeAnchor(t)}>
+            {t} <span class="count">{n}</span>
+          </a>
+        ))}
+      </div>
+    )
+  }
+
+  {
+    list.length === 0 && (
+      <p class="search-hint">
+        还没有英语笔记。点右上角「写英语笔记」，或在 src/content/english/ 下新建 md 文件。
+      </p>
+    )
+  }
+
+  {
+    groups.map(([type, items]) => (
+      <>
+        <h2 class="archive-year" id={`type-${encodeURIComponent(type)}`}>{type}</h2>
+        <ul class="archive-list">
+          {items.map((e) => (
+            <li>
+              <time>{formatDate(e.data.date)}</time>
+              <a class="a-title" href={englishUrl(e.id)}>
+                {displayTitle(e)}
+                {e.data.password && <span class="lock-badge">加密</span>}
+              </a>
+              {e.data.tags.length > 0 && <span class="a-cat">{e.data.tags.map((t) => "#" + t).join(" ")}</span>}
+            </li>
+          ))}
+        </ul>
+      </>
+    ))
+  }
+</BaseLayout>
